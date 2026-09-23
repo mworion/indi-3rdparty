@@ -1,17 +1,19 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.16)
 PROJECT(indi_lunatico CXX C)
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
 include(GNUInstallDirs)
 
-SET(CMAKE_CXX_STANDARD 11)
-SET(RULES_INSTALL_DIR "/lib/udev/rules.d/")
+option(INDI_INSTALL_UDEV_RULES "Install UDEV rules" On)
+
+SET(CMAKE_CXX_STANDARD 17)
+SET(RULES_INSTALL_DIR "/usr/lib/udev/rules.d/")
 
 find_package(INDI REQUIRED)
 
 set (LUNATICO_VERSION_MAJOR 2)
-set (LUNATICO_VERSION_MINOR 1)
+set (LUNATICO_VERSION_MINOR 3)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config.h )
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/indi_lunatico.xml.cmake ${CMAKE_CURRENT_BINARY_DIR}/indi_lunatico.xml )
@@ -39,6 +41,16 @@ set(dragonfly_SRCS
 add_executable(indi_dragonfly_dome ${dragonfly_SRCS})
 target_link_libraries(indi_dragonfly_dome ${INDI_LIBRARIES} )
 install(TARGETS indi_dragonfly_dome RUNTIME DESTINATION bin )
+
+########### Lunatico DragonFly Controller ###########
+set(dragonflycontroller_SRCS
+   ${CMAKE_CURRENT_SOURCE_DIR}/dragonfly_controller.cpp
+   )
+
+add_executable(indi_dragonfly ${dragonflycontroller_SRCS})
+target_link_libraries(indi_dragonfly ${INDI_LIBRARIES} )
+install(TARGETS indi_dragonfly RUNTIME DESTINATION bin )
+
 
 ########### Beaver Dome ###########
 set(beaver_SRCS
@@ -69,6 +81,6 @@ install(TARGETS indi_platypus_focus RUNTIME DESTINATION bin )
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_lunatico.xml DESTINATION ${INDI_DATA_DIR})
 
-if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND INDI_INSTALL_UDEV_RULES)
 install(FILES 99-armadilloplatypus.rules DESTINATION ${RULES_INSTALL_DIR})
 endif()

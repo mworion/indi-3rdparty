@@ -1,3 +1,87 @@
+libqhy (26.7.21) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Tue, 21 Jul 2026 05:51:05 +0000
+
+libqhy (26.6.6) bullseye; urgency=medium
+
+  * Fixed issue is 85-qhyccd.rules file.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Sun, 17 May 2026 10:30:40 +0000
+
+libqhy (26.5.17) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Sun, 17 May 2026 10:30:40 +0000
+
+libqhy (26.2.1) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Sun, 1 Feb 2026 14:00:00 +0300
+
+libqhy (25.10.29) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Wed, 29 Oct 2025 14:00:00 +0300
+
+libqhy (25.6.3) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Tue, 3 Jun 2025 14:00:00 +0300
+
+libqhy (25.4.2) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Wed, 2 Apr 2025 14:00:00 +0300
+
+libqhy (25.1.19) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Mon, 19 Jan 2025 14:00:00 +0300
+
+libqhy (24.7.29) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Tue, 30 Jul 2024 14:00:00 +0300
+
+libqhy (24.4.1) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Mon, 1 Apr 2024 14:00:00 +0300
+
+libqhy (24.1.4) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Thu, 4 Jan 2024 14:00:00 +0300
+
+libqhy (23.7.16) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Sun, 16 Jul 2023 14:00:00 +0300
+
+libqhy (23.5.12) bullseye; urgency=medium
+
+  * Upstream release.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Fri, 12 May 2023 14:00:00 +0300
+
+libqhy (23.2.24) bullseye; urgency=medium
+
+  * Removed OpenCV.
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Fri, 24 Feb 2023 14:00:00 +0300
+
 libqhy (22.11.9) bullseye; urgency=medium
 
   * Upstream release.

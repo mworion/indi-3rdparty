@@ -133,27 +133,6 @@ bool RTKLIB::is_rtkrcv()
     return true;
 }
 
-bool RTKLIB::setSystemTime(time_t& raw_time)
-{
-    #ifdef __linux__
-        #if defined(__GNU_LIBRARY__)
-            #if (__GLIBC__ >= 2) && (__GLIBC_MINOR__ > 30)
-                timespec sTime = {};
-                sTime.tv_sec = raw_time;
-                clock_settime(CLOCK_REALTIME, &sTime);
-            #else
-                stime(&raw_time);
-            #endif
-        #else
-            stime(&raw_time);
-        #endif
-        return true;
-    #else
-        (void)raw_time;
-        return false;
-    #endif
-}
-
 void* RTKLIB::parse_rtkrcv_helper(void *obj)
 {
     static_cast<RTKLIB*>(obj)->parse_rtkrcv();
@@ -219,27 +198,27 @@ void RTKLIB::parse_rtkrcv()
         scansolution(line, &flags, &type, enu, &fix, &timestamp);
         switch (fix)
         {
-        case status_no_fix:
-            LOG_DEBUG("no fix");
-            break;
-        case status_float:
-            LOG_DEBUG("float fix");
-            break;
-        case status_sbas:
-            LOG_DEBUG("sbas fix");
-            break;
-        case status_dgps:
-            LOG_DEBUG("dgps fix");
-            break;
-        case status_single:
-            LOG_DEBUG("single fix");
-            break;
-        case status_ppp:
-            LOG_DEBUG("ppp fix");
-            break;
-        case status_unknown:
-            LOG_DEBUG("unknown fix status");
-            break;
+            case status_no_fix:
+                LOG_DEBUG("no fix");
+                break;
+            case status_float:
+                LOG_DEBUG("float fix");
+                break;
+            case status_sbas:
+                LOG_DEBUG("sbas fix");
+                break;
+            case status_dgps:
+                LOG_DEBUG("dgps fix");
+                break;
+            case status_single:
+                LOG_DEBUG("single fix");
+                break;
+            case status_ppp:
+                LOG_DEBUG("ppp fix");
+                break;
+            case status_unknown:
+                LOG_DEBUG("unknown fix status");
+                break;
             case status_fix:
             {
                 LocationNP[LOCATION_LATITUDE].value  = enu[0];
@@ -253,9 +232,10 @@ void RTKLIB::parse_rtkrcv()
                 struct tm *utc, *local;
 
                 timesp.tv_sec = (time_t)timestamp;
-                timesp.tv_nsec = (time_t)(timestamp*1000000000.0);
+                timesp.tv_nsec = (time_t)(timestamp * 1000000000.0);
 
                 raw_time = timesp.tv_sec;
+                m_GPSTime = raw_time;
                 utc = gmtime(&raw_time);
                 strftime(ts, 32, "%Y-%m-%dT%H:%M:%S", utc);
                 TimeTP[0].setText(ts);

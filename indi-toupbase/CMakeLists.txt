@@ -1,95 +1,206 @@
-cmake_minimum_required(VERSION 3.0)
-PROJECT(indi_toupbase CXX C)
+cmake_minimum_required(VERSION 3.16)
+project(indi_toupbase CXX C)
 
-LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
-LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
 include(GNUInstallDirs)
+include(CMakeCommon)
 
-set(UDEVRULES_INSTALL_DIR "/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
+set(
+  UDEVRULES_INSTALL_DIR
+  "/usr/lib/udev/rules.d"
+  CACHE STRING
+  "Base directory for udev rules"
+)
+
+set(TOUPBASE_VERSION_MAJOR 2)
+set(TOUPBASE_VERSION_MINOR 6)
+
+if(PROJECT_IS_TOP_LEVEL)
+  option(WITH_TOUPCAM "Install Toupcam Driver" On)
+  option(WITH_ALTAIRCAM "Install Altaircam Driver" On)
+  option(WITH_BRESSERCAM "Install Bressercam Driver" On)
+  option(WITH_MALLINCAM "Install Mallingcam Driver" On)
+  option(WITH_MEADECAM "Install Meadecam Driver" On)
+  option(WITH_NNCAM "Install NNcam Driver" On)
+  option(WITH_OGMACAM "Install Ogmacam Driver" On)
+  option(WITH_OMEGONPROCAM "Install Omegonprocam Driver" On)
+  option(WITH_STARSHOOTG "Install Starshootg Driver" On)
+  option(WITH_TSCAM "Install TScam Driver" On)
+  option(WITH_SVBONYCAM "Install Svbonycam Driver" On)
+endif()
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/config.h
+)
+
+set(
+  indi_toupbase_SRCS
+  ${CMAKE_CURRENT_SOURCE_DIR}/indi_toupbase.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/libtoupbase.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/toupbase_ccd_hotplug_handler.cpp
+)
+set(
+  indi_wheel_SRCS
+  ${CMAKE_CURRENT_SOURCE_DIR}/indi_toupwheel.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/libtoupbase.cpp
+)
+set(
+  indi_focuser_SRCS
+  ${CMAKE_CURRENT_SOURCE_DIR}/indi_focuser.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/libtoupbase.cpp
+)
 
 find_package(CFITSIO REQUIRED)
 find_package(INDI REQUIRED)
 find_package(ZLIB REQUIRED)
-find_package(USB1 REQUIRED)
 find_package(Threads REQUIRED)
-find_package(TOUPCAM REQUIRED)
-find_package(ALTAIRCAM REQUIRED)
-find_package(STARSHOOTG REQUIRED)
-find_package(NNCAM REQUIRED)
-find_package(MALLINCAM REQUIRED)
-find_package(OMEGONPROCAM REQUIRED)
-find_package(USB1 REQUIRED)
 
-set(TOUPBASE_VERSION_MAJOR 1)
-set(TOUPBASE_VERSION_MINOR 0)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${INDI_INCLUDE_DIR})
+include_directories(${CFITSIO_INCLUDE_DIR})
 
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config.h )
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/indi_toupbase.xml.cmake ${CMAKE_CURRENT_BINARY_DIR}/indi_toupbase.xml)
+macro(build_touptek_driver BRAND LABEL MANUFACTURER DRIVER_NAME)
+  string(TOLOWER ${BRAND} BRAND_LOWER)
+  set(LABEL ${LABEL})
+  set(MANUFACTURER ${MANUFACTURER})
+  set(DRIVER_NAME ${DRIVER_NAME})
+  string(TOLOWER ${BRAND} DRIVER_LIB_NAME)
 
-include_directories( ${CMAKE_CURRENT_BINARY_DIR})
-include_directories( ${CMAKE_CURRENT_SOURCE_DIR})
-include_directories( ${INDI_INCLUDE_DIR})
-include_directories( ${CFITSIO_INCLUDE_DIR})
-include_directories( ${TOUPCAM_INCLUDE_DIR})
-include_directories( ${ALTAIRCAM_INCLUDE_DIR})
-include_directories( ${STARSHOOTG_INCLUDE_DIR})
-include_directories( ${NNCAM_INCLUDE_DIR})
-include_directories( ${MALLINCAM_INCLUDE_DIR})
-include_directories( ${OMEGONPROCAM_INCLUDE_DIR})
-include_directories( ${USB1_INCLUDE_DIR})
+  find_package(${BRAND} REQUIRED)
+  include_directories(${${BRAND}_INCLUDE_DIR})
 
-include(CMakeCommon)
+  configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/indi_toupbase.xml.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/indi_${BRAND_LOWER}.xml
+  )
 
-set(indi_toupbase_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/indi_toupbase.cpp ${CMAKE_CURRENT_SOURCE_DIR}/oem_cameras.cpp)
+  add_executable(indi_${BRAND_LOWER}_ccd ${indi_toupbase_SRCS})
+  target_compile_definitions(indi_${BRAND_LOWER}_ccd PRIVATE "-DBUILD_${BRAND}")
+  target_link_libraries(
+    indi_${BRAND_LOWER}_ccd
+    ${INDI_LIBRARIES}
+    ${CFITSIO_LIBRARIES}
+    ${${BRAND}_LIBRARIES}
+    ${ZLIB_LIBRARY}
+    ${CMAKE_DL_LIBS}
+    ${CMAKE_THREAD_LIBS_INIT}
+  )
 
-########### indi_toupcam_ccd ###########
-add_executable(indi_toupcam_ccd ${indi_toupbase_SRCS})
-target_compile_definitions(indi_toupcam_ccd PRIVATE "-DBUILD_TOUPCAM")
-target_link_libraries(indi_toupcam_ccd ${INDI_LIBRARIES} ${CFITSIO_LIBRARIES} ${TOUPCAM_LIBRARIES} ${USB1_LIBRARIES} ${ZLIB_LIBRARY} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+  add_executable(indi_${BRAND_LOWER}_wheel ${indi_wheel_SRCS})
+  target_compile_definitions(indi_${BRAND_LOWER}_wheel PRIVATE "-DBUILD_${BRAND}")
+  target_link_libraries(
+    indi_${BRAND_LOWER}_wheel
+    ${INDI_LIBRARIES}
+    ${CFITSIO_LIBRARIES}
+    ${${BRAND}_LIBRARIES}
+    ${ZLIB_LIBRARY}
+    ${CMAKE_DL_LIBS}
+    ${CMAKE_THREAD_LIBS_INIT}
+  )
 
-########### indi_altair_ccd ###########
-add_executable(indi_altair_ccd ${indi_toupbase_SRCS})
-target_compile_definitions(indi_altair_ccd PRIVATE "-DBUILD_ALTAIRCAM")
-target_link_libraries(indi_altair_ccd ${INDI_LIBRARIES} ${CFITSIO_LIBRARIES} ${ALTAIRCAM_LIBRARIES} ${USB1_LIBRARIES} ${ZLIB_LIBRARY} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+  add_executable(indi_${BRAND_LOWER}_focuser ${indi_focuser_SRCS})
+  target_compile_definitions(indi_${BRAND_LOWER}_focuser PRIVATE "-DBUILD_${BRAND}")
+  target_link_libraries(
+    indi_${BRAND_LOWER}_focuser
+    ${INDI_LIBRARIES}
+    ${CFITSIO_LIBRARIES}
+    ${${BRAND}_LIBRARIES}
+    ${ZLIB_LIBRARY}
+    ${CMAKE_DL_LIBS}
+    ${CMAKE_THREAD_LIBS_INIT}
+  )
 
-########### indi_starshootg_ccd ###########
-add_executable(indi_starshootg_ccd ${indi_toupbase_SRCS})
-target_compile_definitions(indi_starshootg_ccd PRIVATE "-DBUILD_STARSHOOTG")
-target_link_libraries(indi_starshootg_ccd ${INDI_LIBRARIES} ${CFITSIO_LIBRARIES} ${STARSHOOTG_LIBRARIES} ${USB1_LIBRARIES} ${ZLIB_LIBRARY} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+  if(
+    CMAKE_SYSTEM_NAME MATCHES "Linux"
+    AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm*"
+  )
+    target_link_libraries(indi_${BRAND_LOWER}_ccd rt)
+    target_link_libraries(indi_${BRAND_LOWER}_wheel rt)
+    target_link_libraries(indi_${BRAND_LOWER}_focuser rt)
+  endif()
 
-########### indi_nncam_ccd ###########
-add_executable(indi_nncam_ccd ${indi_toupbase_SRCS})
-target_compile_definitions(indi_nncam_ccd PRIVATE "-DBUILD_NNCAM")
-target_link_libraries(indi_nncam_ccd ${INDI_LIBRARIES} ${CFITSIO_LIBRARIES} ${NNCAM_LIBRARIES} ${USB1_LIBRARIES} ${ZLIB_LIBRARY} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+  install(
+    TARGETS indi_${BRAND_LOWER}_ccd indi_${BRAND_LOWER}_wheel indi_${BRAND_LOWER}_focuser
+    RUNTIME DESTINATION bin
+  )
+  install(
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_${BRAND_LOWER}.xml
+    DESTINATION ${INDI_DATA_DIR}
+  )
+endmacro()
 
-########### indi_mallincam_ccd ###########
-add_executable(indi_mallincam_ccd ${indi_toupbase_SRCS})
-target_compile_definitions(indi_mallincam_ccd PRIVATE "-DBUILD_MALLINCAM")
-target_link_libraries(indi_mallincam_ccd ${INDI_LIBRARIES} ${CFITSIO_LIBRARIES} ${MALLINCAM_LIBRARIES} ${USB1_LIBRARIES} ${ZLIB_LIBRARY} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+########### indi_toupcam_* ###########
+if(WITH_TOUPCAM)
+  build_touptek_driver("TOUPCAM" "Toupcam" "Touptek" "Touptek")
 
-########### indi_omegonprocam_ccd ###########
-add_executable(indi_omegonprocam_ccd ${indi_toupbase_SRCS})
-target_compile_definitions(indi_omegonprocam_ccd PRIVATE "-DBUILD_OMEGONPROCAM")
-target_link_libraries(indi_omegonprocam_ccd ${INDI_LIBRARIES} ${CFITSIO_LIBRARIES} ${OMEGONPROCAM_LIBRARIES} ${USB1_LIBRARIES} ${ZLIB_LIBRARY} ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+  add_executable(toupcam_test toupcam_test.cpp)
+  target_link_libraries(
+    toupcam_test
+    ${TOUPCAM_LIBRARIES}
+    ${ZLIB_LIBRARY}
+    ${CMAKE_DL_LIBS}
+    ${CMAKE_THREAD_LIBS_INIT}
+  )
+endif()
 
-#####################################
+########### indi_altair_* ###########
+if(WITH_ALTAIRCAM)
+  build_touptek_driver("ALTAIRCAM" "Altair" "Altair" "Altair")
+endif()
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
-target_link_libraries(indi_toupcam_ccd rt)
-target_link_libraries(indi_altair_ccd rt)
-target_link_libraries(indi_starshootg_ccd rt)
-target_link_libraries(indi_nncam_ccd rt)
-target_link_libraries(indi_mallincam_ccd rt)
-target_link_libraries(indi_omegonprocam_ccd rt)
-endif (CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
+########### indi_bressercam_* ###########
+if(WITH_BRESSERCAM)
+  build_touptek_driver("BRESSERCAM" "Bresser" "Bresser" "Bresser")
+endif()
 
-install(TARGETS
-    indi_toupcam_ccd
-    indi_altair_ccd
-    indi_starshootg_ccd
-    indi_nncam_ccd
-    indi_mallincam_ccd
-    indi_omegonprocam_ccd
-    RUNTIME DESTINATION bin)
+########### indi_ogmacam_* ###########
+if(WITH_OGMACAM)
+  build_touptek_driver("OGMACAM" "Ogmacam" "OGMAVision" "OGMAVision")
+endif()
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_toupbase.xml DESTINATION ${INDI_DATA_DIR})
+########### indi_tscam_* ###########
+if(WITH_TSCAM)
+  build_touptek_driver("TSCAM" "Tscam" "Teleskop" "Teleskop")
+endif()
+
+########### indi_svbonycam_* ###########
+if(WITH_SVBONYCAM)
+  build_touptek_driver("SVBONYCAM" "SVbonycam" "SVBONY2" "SVBONY2")
+endif()
+
+########### indi_starshootg_* ###########
+if(WITH_STARSHOOTG)
+  build_touptek_driver("STARSHOOTG" "StarShootG" "Orion" "Orion")
+endif()
+
+########### indi_nncam_* ###########
+if(WITH_NNCAM)
+  build_touptek_driver("NNCAM" "Nncam" "Nn" "Nn")
+endif()
+
+########### indi_mallincam_* ###########
+if(WITH_MALLINCAM)
+  build_touptek_driver("MALLINCAM" "Mallincam" "Mallincam" "MALLINCAM")
+endif()
+
+########### indi_omegonprocam_* ###########
+if(WITH_OMEGONPROCAM)
+  build_touptek_driver("OMEGONPROCAM" "OmegonPro" "Omegon" "Astroshop")
+
+  add_executable(omegonprocam_test omegonprocam_test.cpp)
+  target_link_libraries(
+    omegonprocam_test
+    ${OMEGONPROCAM_LIBRARIES}
+    ${ZLIB_LIBRARY}
+    ${CMAKE_DL_LIBS}
+    ${CMAKE_THREAD_LIBS_INIT}
+  )
+endif()
+
+########### indi_meadecam_* ###########
+if(WITH_MEADECAM)
+  build_touptek_driver("MEADECAM" "Meadecam" "Meade" "Meade")
+endif()

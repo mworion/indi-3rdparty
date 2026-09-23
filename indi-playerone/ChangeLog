@@ -1,3 +1,83 @@
+v1.24
+* Available exposure change during video streaming
+* Refactor with thin, type-safe C++ wrapper for C SDK
+
+v1.23
+* BugFix: Error handling of getImageData()/getExposure()
+* Replace usleep() to wait_for()
+
+v1.22
+* Update: PlayerOneCamera SDK to v3.10.0
+* Update: PlayerOnePW SDK to v1.2.3
+
+v1.21
+* Update: PlayerOneCamera SDK to v3.9.1
+
+v1.20
+* Update: PlayerOneCamera SDK to v3.9.0
+
+v1.19
+* Update: PlayerOneCamera SDK to v3.8.1
+* Update: PlayerOnePW SDK to v1.2.2
+
+v1.18
+* Update: PlayerOneCamera SDK to v3.8.0
+
+v1.17
+* Update: PlayerOneCamera SDK to v3.7.1
+* Update: PlayerOnePW SDK to v1.2.1
+
+v1.16
+* Update: PlayerOneCamera SDK to v3.7.0
+
+v1.15
+* Update: PlayerOneCamera SDK to v3.6.3
+
+v1.14
+* Update: PlayerOneCamera SDK to v3.6.2
+
+v1.13
+* Update: PlayerOneCamera SDK to v3.6.1
+
+v1.12
+* Update: PlayerOneCamera SDK to v3.6.0
+
+v1.11
+* Update: PlayerOneCamera SDK to v3.5.0
+
+v1.10
+* Update: PlayerOneCamera SDK to v3.4.1
+
+v1.9
+* Add: sensor mode control for cameras that support it
+
+v1.8
+* Update: PlayerOneCamera SDK to v3.4.0
+
+v1.7
+* Update: PlayerOneCamera SDK to v3.3.0
+
+v1.6
+* Update: PlayerOnePW SDK to v1.2.0
+
+v1.5
+* BugFix: top quarter noise on bin2 image
+
+v1.4
+* Update: PlayerOneCamera SDK to v3.2.2
+
+v1.3
+* Update: PlayerOneCamera SDK to v3.2.1
+
+v1.2
+* Add: single camera driver for multi threading
+* Add: flip property with bayer compensation
+* Add: nickname property for multi camera driver
+* Update: PlayerOneCamera SDK to v3.2.0
+
+v1.1
+* Update: PlayerOnePW SDK to v1.1.0
+
 v1.0
 * Add: PlayerOne Filter Wheel driver
 * Update: PlayerOneCamera SDK to v3.1.1

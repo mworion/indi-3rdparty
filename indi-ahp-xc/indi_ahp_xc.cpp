@@ -180,31 +180,12 @@ void AHP_XC::sendFile(IBLOB* Blobs, IBLOBVectorProperty BlobP, unsigned int len)
 
     if (sendImage)
     {
-#ifdef HAVE_WEBSOCKET
-        if (HasWebSocket() && WebSocketS[WEBSOCKET_ENABLED].s == ISS_ON)
-        {
-            for(unsigned int x = 0; x < len; x++)
-            {
-                auto start = std::chrono::high_resolution_clock::now();
+        auto start = std::chrono::high_resolution_clock::now();
+        IDSetBLOB(&BlobP, nullptr);
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        LOGF_DEBUG("BLOB transfer took %g seconds", diff.count());
 
-                // Send format/size/..etc first later
-                wsServer.send_text(std::string(Blobs[x].format));
-                wsServer.send_binary(Blobs[x].blob, Blobs[x].bloblen);
-
-                auto end = std::chrono::high_resolution_clock::now();
-                std::chrono::duration<double> diff = end - start;
-                LOGF_DEBUG("Websocket transfer took %g seconds", diff.count());
-            }
-        }
-        else
-#endif
-        {
-            auto start = std::chrono::high_resolution_clock::now();
-            IDSetBLOB(&BlobP, nullptr);
-            auto end = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> diff = end - start;
-            LOGF_DEBUG("BLOB transfer took %g seconds", diff.count());
-        }
     }
 
     LOG_INFO( "Upload complete");
@@ -462,7 +443,8 @@ void AHP_XC::Callback()
                 {
                     if(HasDSP())
                     {
-                        DSP->processBLOB(static_cast<unsigned char*>(static_cast<void*>(plot_str[x]->buf)), static_cast<unsigned int>(plot_str[x]->dims), plot_str[x]->sizes, -64); //TODO
+                        DSP->processBLOB(static_cast<unsigned char*>(static_cast<void*>(plot_str[x]->buf)),
+                                         static_cast<unsigned int>(plot_str[x]->dims), plot_str[x]->sizes, -64); //TODO
                     }
                     size_t memsize = static_cast<unsigned int>(plot_str[x]->len) * sizeof(double);
                     void* fits = createFITS(-64, &memsize, plot_str[x]);
@@ -633,43 +615,44 @@ AHP_XC::AHP_XC()
     IntegrationRequest = 0.0;
     InIntegration = false;
 
-    autocorrelationsB = static_cast<IBLOB*>(malloc(1));
-    crosscorrelationsB = static_cast<IBLOB*>(malloc(1));
-    plotB = static_cast<IBLOB*>(malloc(1));
+    // These allocations are uninitialised placeholders
 
-    lineStatsN = static_cast<INumber*>(malloc(1));
-    lineStatsNP = static_cast<INumberVectorProperty*>(malloc(1));
+    autocorrelationsB = static_cast<IBLOB*>(malloc(sizeof(IBLOB)));
+    crosscorrelationsB = static_cast<IBLOB*>(malloc(sizeof(IBLOB)));
+    plotB = static_cast<IBLOB*>(malloc(sizeof(IBLOB)));
 
-    lineEnableS = static_cast<ISwitch*>(malloc(1));
-    lineEnableSP = static_cast<ISwitchVectorProperty*>(malloc(1));
+    lineStatsN = static_cast<INumber*>(malloc(sizeof(INumber)));
+    lineStatsNP = static_cast<INumberVectorProperty*>(malloc(sizeof(INumberVectorProperty)));
 
-    linePowerS = static_cast<ISwitch*>(malloc(1));
-    linePowerSP = static_cast<ISwitchVectorProperty*>(malloc(1));
+    lineEnableS = static_cast<ISwitch*>(malloc(sizeof(ISwitch)));
+    lineEnableSP = static_cast<ISwitchVectorProperty*>(malloc(sizeof(ISwitchVectorProperty)));
 
-    lineActiveEdgeS = static_cast<ISwitch*>(malloc(1));
-    lineActiveEdgeSP = static_cast<ISwitchVectorProperty*>(malloc(1));
+    linePowerS = static_cast<ISwitch*>(malloc(sizeof(ISwitch)));
+    linePowerSP = static_cast<ISwitchVectorProperty*>(malloc(sizeof(ISwitchVectorProperty)));
 
-    lineEdgeTriggerS = static_cast<ISwitch*>(malloc(1));
-    lineEdgeTriggerSP = static_cast<ISwitchVectorProperty*>(malloc(1));
+    lineActiveEdgeS = static_cast<ISwitch*>(malloc(sizeof(ISwitch)));
+    lineActiveEdgeSP = static_cast<ISwitchVectorProperty*>(malloc(sizeof(ISwitchVectorProperty)));
 
-    lineLocationN = static_cast<INumber*>(malloc(1));
-    lineLocationNP = static_cast<INumberVectorProperty*>(malloc(1));
+    lineEdgeTriggerS = static_cast<ISwitch*>(malloc(sizeof(ISwitch)));
+    lineEdgeTriggerSP = static_cast<ISwitchVectorProperty*>(malloc(sizeof(ISwitchVectorProperty)));
 
-    lineDelayN = static_cast<INumber*>(malloc(1));
-    lineDelayNP = static_cast<INumberVectorProperty*>(malloc(1));
+    lineLocationN = static_cast<INumber*>(malloc(sizeof(INumber)));
+    lineLocationNP = static_cast<INumberVectorProperty*>(malloc(sizeof(INumberVectorProperty)));
 
-    correlationsN = static_cast<INumber*>(malloc(1));
+    lineDelayN = static_cast<INumber*>(malloc(sizeof(INumber)));
+    lineDelayNP = static_cast<INumberVectorProperty*>(malloc(sizeof(INumberVectorProperty)));
 
-    autocorrelations_str = static_cast<dsp_stream_p*>(malloc(1));
-    crosscorrelations_str = static_cast<dsp_stream_p*>(malloc(1));
-    plot_str = static_cast<dsp_stream_p*>(malloc(1));
+    correlationsN = static_cast<INumber*>(malloc(sizeof(INumber)));
 
-    framebuffer = static_cast<double*>(malloc(1));
-    totalcounts = static_cast<double*>(malloc(1));
-    totalcorrelations = static_cast<ahp_xc_correlation*>(malloc(1));
-    delay = static_cast<double*>(malloc(1));
-    baselines = static_cast<baseline**>(malloc(1));
+    autocorrelations_str = static_cast<dsp_stream_p*>(malloc(sizeof(dsp_stream_p)));
+    crosscorrelations_str = static_cast<dsp_stream_p*>(malloc(sizeof(dsp_stream_p)));
+    plot_str = static_cast<dsp_stream_p*>(malloc(sizeof(dsp_stream_p)));
 
+    framebuffer = static_cast<double*>(malloc(sizeof(double)));
+    totalcounts = static_cast<double*>(malloc(sizeof(double)));
+    totalcorrelations = static_cast<ahp_xc_correlation*>(malloc(sizeof(ahp_xc_correlation)));
+    delay = static_cast<double*>(malloc(sizeof(double)));
+    baselines = static_cast<baseline**>(malloc(sizeof(baseline)));
 }
 
 bool AHP_XC::Disconnect()
@@ -959,7 +942,7 @@ bool AHP_XC::ISNewSwitch(const char *dev, const char *name, ISState *states, cha
                 states[0] = states[1] = states[2] = ISS_OFF;
                 states[3] = ISS_ON;
             }
-            IUUpdateSwitch(getSwitch("DEVICE_BAUD_RATE"), states, names, n);
+            getSwitch("DEVICE_BAUD_RATE").update(states, names, n);
             if (states[3] == ISS_ON)
             {
                 ahp_xc_set_baudrate(R_BASE);
@@ -972,7 +955,7 @@ bool AHP_XC::ISNewSwitch(const char *dev, const char *name, ISState *states, cha
             {
                 ahp_xc_set_baudrate(R_BASEX4);
             }
-            IDSetSwitch(getSwitch("DEVICE_BAUD_RATE"), nullptr);
+            getSwitch("DEVICE_BAUD_RATE").apply();
         }
     }
 
@@ -1157,12 +1140,12 @@ void AHP_XC::TimerHit()
     return;
 }
 
-bool AHP_XC::Connect()
+bool AHP_XC::Handshake()
 {
     if(serialConnection->port() == nullptr)
         return false;
 
-    if(0 != ahp_xc_connect(serialConnection->port(), false))
+    if(0 != ahp_xc_connect_fd(PortFD))
     {
         ahp_xc_disconnect();
         return false;

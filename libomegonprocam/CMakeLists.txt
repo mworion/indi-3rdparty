@@ -1,13 +1,15 @@
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 project (libomegonprocam)
 
-# Using ToupCamera SDK Version: 53.21120.20220710
-set (LIBOMEGONPROCAM_VERSION "1.53.2")
-set (LIBOMEGONPROCAM_SOVERSION "1")
+set (LIBOMEGONPROCAM_VERSION "60.32226")
+set (LIBOMEGONPROCAM_SOVERSION "60")
+
+option(INDI_INSTALL_UDEV_RULES "Install UDEV rules" On)
 
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
 include (GNUInstallDirs)
+include(CMakeCommon)
 include (InstallImported)
 
 add_library (omegonprocam SHARED IMPORTED)
@@ -18,7 +20,7 @@ if (APPLE)
 
   set_property (TARGET omegonprocam PROPERTY IMPORTED_LOCATION "mac/libomegonprocam.bin")
 
-  FIX_LIBRARY_ID("libomegonprocam" "mac/libomegonprocam.bin" "OMEGON")
+  FIX_MACOS_LIBRARIES("libomegonprocam" "mac/libomegonprocam.bin" "OMEGON")
 
 elseif (UNIX AND NOT WIN32)
 
@@ -31,8 +33,10 @@ elseif (UNIX AND NOT WIN32)
   endif ()
 
   # Install udev rules
-  set (UDEVRULES_INSTALL_DIR "/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
-  install (FILES 99-omegonprocam.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  if (INDI_INSTALL_UDEV_RULES)
+    set (UDEVRULES_INSTALL_DIR "/usr/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
+    install (FILES 99-omegonprocam.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  endif ()
 
 endif ()
 

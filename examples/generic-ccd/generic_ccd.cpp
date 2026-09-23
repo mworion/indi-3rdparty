@@ -95,6 +95,10 @@ bool GenericCCD::initProperties()
     uint32_t cap = CCD_CAN_ABORT | CCD_CAN_BIN | CCD_CAN_SUBFRAME | CCD_HAS_COOLER | CCD_HAS_SHUTTER | CCD_HAS_ST4_PORT;
     SetCCDCapability(cap);
 
+    // Simulate Crash
+    CrashSP.fill(getDeviceName(), "CCD_SIMULATE_CRASH", "Crash", OPTIONS_TAB, IP_WO, ISR_ATMOST1, 60, IPS_IDLE);
+    CrashSP[0].fill("CRASH", "Crash driver", ISS_OFF);
+
     // Add configuration for Debug
     addDebugControl();
 
@@ -114,6 +118,7 @@ bool GenericCCD::updateProperties()
     {
         // Let's get parameters now from CCD
         setupParams();
+        CrashSP.define();
         SetTimer(getCurrentPollingPeriod());
     }
 
@@ -213,9 +218,9 @@ bool GenericCCD::setupParams()
     // 3. Get temperature
     ///////////////////////////
     // Setting sample temperature -- MAKE CALL TO API FUNCTION TO GET TEMPERATURE IN REAL DRIVER
-    TemperatureN[0].value = 25.0;
-    LOGF_INFO("The CCD Temperature is %f", TemperatureN[0].value);
-    IDSetNumber(&TemperatureNP, nullptr);
+    TemperatureNP[0].setValue(25.0);
+    LOGF_INFO("The CCD Temperature is %f", TemperatureNP[0].getValue());
+    TemperatureNP.apply();
 
     ///////////////////////////
     // 4. Get temperature
@@ -243,7 +248,7 @@ bool GenericCCD::setupParams()
 int GenericCCD::SetTemperature(double temperature)
 {
     // If there difference, for example, is less than 0.1 degrees, let's immediately return OK.
-    if (fabs(temperature - TemperatureN[0].value) < TEMP_THRESHOLD)
+    if (std::abs(temperature - TemperatureNP[0].getValue()) < TEMP_THRESHOLD)
         return 1;
 
     /**********************************************************
@@ -503,7 +508,7 @@ void GenericCCD::TimerHit()
     }
 
     // Are we performing temperature readout or regulation?
-    switch (TemperatureNP.s)
+    switch (TemperatureNP.getState())
     {
         case IPS_IDLE:
         case IPS_OK:
@@ -534,13 +539,13 @@ void GenericCCD::TimerHit()
             *
             *
             **********************************************************/
-            TemperatureN[0].value = TemperatureRequest;
+            TemperatureNP[0].setValue(TemperatureRequest);
 
             // If we're within threshold, let's make it BUSY ---> OK
-            if (fabs(TemperatureRequest - TemperatureN[0].value) <= TEMP_THRESHOLD)
-                TemperatureNP.s = IPS_OK;
+            if (std::abs(TemperatureRequest - TemperatureNP[0].getValue()) <= TEMP_THRESHOLD)
+                TemperatureNP.setState(IPS_OK);
 
-            IDSetNumber(&TemperatureNP, nullptr);
+            TemperatureNP.apply();
             break;
 
         case IPS_ALERT:
@@ -657,4 +662,20 @@ IPState GenericCCD::GuideWest(uint32_t ms)
      **********************************************************/
 
     return IPS_OK;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+/// Crash simulation
+///////////////////////////////////////////////////////////////////////////////////////
+bool GenericCCD::ISNewSwitch(const char * dev, const char * name, ISState * states, char * names[], int n)
+{
+    if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
+    {
+        if (CrashSP.isNameMatch(name))
+        {
+            abort();
+        }
+    }
+
+    return INDI::CCD::ISNewSwitch(dev, name, states, names, n);
 }

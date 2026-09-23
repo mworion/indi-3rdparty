@@ -1,14 +1,16 @@
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 project (libaltaircam)
 
-# Using AltairCamera SDK Version: 53.21445.20220918
-set (LIBALTAIRCAM_VERSION "1.53.2")
-set (LIBALTAIRCAM_SOVERSION "1")
+set (LIBALTAIRCAM_VERSION "60.32226")
+set (LIBALTAIRCAM_SOVERSION "60")
 
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
 include (GNUInstallDirs)
+include(CMakeCommon)
 include (InstallImported)
+
+option(INDI_INSTALL_UDEV_RULES "Install UDEV rules" On)
 
 add_library (altaircam SHARED IMPORTED)
 
@@ -18,7 +20,7 @@ if (APPLE)
 
   set_property (TARGET altaircam PROPERTY IMPORTED_LOCATION "mac/libaltaircam.bin")
 
-  FIX_LIBRARY_ID("libaltaircam" "mac/libaltaircam.bin" "ALTAIR")
+  FIX_MACOS_LIBRARIES("libaltaircam" "mac/libaltaircam.bin" "ALTAIR")
 
 elseif (UNIX AND NOT WIN32)
 
@@ -33,8 +35,10 @@ elseif (UNIX AND NOT WIN32)
   endif ()
 
   # Install udev rules
-  set (UDEVRULES_INSTALL_DIR "/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
-  install (FILES 99-altaircam.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  IF (INDI_INSTALL_UDEV_RULES)
+    set (UDEVRULES_INSTALL_DIR "/usr/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
+    install (FILES 99-altaircam.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  ENDIF()
 
 endif ()
 

@@ -47,14 +47,16 @@ char AUXCommand::DEVICE_NAME[64] = {0};
 /////////////////////////////////////////////////////////////////////////////////////
 void logBytes(unsigned char *buf, int n, const char *deviceName, uint32_t debugLevel)
 {
-    char hex_buffer[BUFFER_SIZE] = {0};
+    if (n <= 0)
+        return;
+
+    std::vector<char> hex_buffer(n * 3 + 1, 0);
     for (int i = 0; i < n; i++)
-        sprintf(hex_buffer + 3 * i, "%02X ", buf[i]);
+        snprintf(hex_buffer.data() + 3 * i, 4, "%02X ", buf[i]);
 
-    if (n > 0)
-        hex_buffer[3 * n - 1] = '\0';
+    hex_buffer[3 * n - 1] = '\0';
 
-    DEBUGFDEVICE(deviceName, debugLevel, "[%s]", hex_buffer);
+    DEBUGFDEVICE(deviceName, debugLevel, "[%s]", hex_buffer.data());
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -62,12 +64,7 @@ void logBytes(unsigned char *buf, int n, const char *deviceName, uint32_t debugL
 /////////////////////////////////////////////////////////////////////////////////////
 void AUXCommand::logResponse()
 {
-    char hex_buffer[BUFFER_SIZE] = {0}, part1[BUFFER_SIZE] = {0}, part2[BUFFER_SIZE] = {0}, part3[BUFFER_SIZE] = {0};
-    for (size_t i = 0; i < m_Data.size(); i++)
-        sprintf(hex_buffer + 3 * i, "%02X ", m_Data[i]);
-
-    if (m_Data.size() > 0)
-        hex_buffer[3 * m_Data.size() - 1] = '\0';
+    char part1[BUFFER_SIZE] = {0}, part2[BUFFER_SIZE] = {0}, part3[BUFFER_SIZE] = {0};
 
     const char * c = commandName(m_Command);
     const char * s = moduleName(m_Source);
@@ -83,13 +80,21 @@ void AUXCommand::logResponse()
     else
         snprintf(part2, BUFFER_SIZE, "%02x ->", m_Source);
 
-    if (s != nullptr)
+    if (d != nullptr)
         snprintf(part3, BUFFER_SIZE, "%5s", d);
     else
         snprintf(part3, BUFFER_SIZE, "%02x", m_Destination);
 
     if (m_Data.size() > 0)
-        DEBUGFDEVICE(DEVICE_NAME, DEBUG_LEVEL, "RES %s%s%s [%s]", part1, part2, part3, hex_buffer);
+    {
+        std::vector<char> hex_buffer(m_Data.size() * 3 + 1, 0);
+        for (size_t i = 0; i < m_Data.size(); i++)
+            snprintf(hex_buffer.data() + 3 * i, 4, "%02X ", m_Data[i]);
+
+        hex_buffer[3 * m_Data.size() - 1] = '\0';
+
+        DEBUGFDEVICE(DEVICE_NAME, DEBUG_LEVEL, "RES %s%s%s [%s]", part1, part2, part3, hex_buffer.data());
+    }
     else
         DEBUGFDEVICE(DEVICE_NAME, DEBUG_LEVEL, "RES %s%s%s", part1, part2, part3);
 }
@@ -99,12 +104,7 @@ void AUXCommand::logResponse()
 /////////////////////////////////////////////////////////////////////////////////////
 void AUXCommand::logCommand()
 {
-    char hex_buffer[BUFFER_SIZE] = {0}, part1[BUFFER_SIZE] = {0}, part2[BUFFER_SIZE] = {0}, part3[BUFFER_SIZE] = {0};
-    for (size_t i = 0; i < m_Data.size(); i++)
-        sprintf(hex_buffer + 3 * i, "%02X ", m_Data[i]);
-
-    if (m_Data.size() > 0)
-        hex_buffer[3 * m_Data.size() - 1] = '\0';
+    char part1[BUFFER_SIZE] = {0}, part2[BUFFER_SIZE] = {0}, part3[BUFFER_SIZE] = {0};
 
     const char * c = commandName(m_Command);
     const char * s = moduleName(m_Source);
@@ -120,13 +120,21 @@ void AUXCommand::logCommand()
     else
         snprintf(part2, BUFFER_SIZE, "%02x ->", m_Source);
 
-    if (s != nullptr)
+    if (d != nullptr)
         snprintf(part3, BUFFER_SIZE, "%5s", d);
     else
         snprintf(part3, BUFFER_SIZE, "%02x", m_Destination);
 
     if (m_Data.size() > 0)
-        DEBUGFDEVICE(DEVICE_NAME, DEBUG_LEVEL, "CMD %s%s%s [%s]", part1, part2, part3, hex_buffer);
+    {
+        std::vector<char> hex_buffer(m_Data.size() * 3 + 1, 0);
+        for (size_t i = 0; i < m_Data.size(); i++)
+            snprintf(hex_buffer.data() + 3 * i, 4, "%02X ", m_Data[i]);
+
+        hex_buffer[3 * m_Data.size() - 1] = '\0';
+
+        DEBUGFDEVICE(DEVICE_NAME, DEBUG_LEVEL, "CMD %s%s%s [%s]", part1, part2, part3, hex_buffer.data());
+    }
     else
         DEBUGFDEVICE(DEVICE_NAME, DEBUG_LEVEL, "CMD %s%s%s", part1, part2, part3);
 }
@@ -136,7 +144,7 @@ void AUXCommand::logCommand()
 /////////////////////////////////////////////////////////////////////////////////////
 void AUXCommand::setDebugInfo(const char *deviceName, uint8_t debugLevel)
 {
-    strncpy(DEVICE_NAME, deviceName, 64);
+    snprintf(DEVICE_NAME, sizeof(DEVICE_NAME), "%s", deviceName);
     DEBUG_LEVEL = debugLevel;
 }
 ////////////////////////////////////////////////
@@ -261,6 +269,8 @@ const char * AUXCommand::commandName(AUXCommands command) const
                 return "MC_SET_AUTOGUIDE_RATE";
             case MC_GET_AUTOGUIDE_RATE:
                 return "MC_GET_AUTOGUIDE_RATE";
+            case FOC_GET_HS_POSITIONS:
+                return "FOC_GET_HS_POSITIONS";
             default :
                 return nullptr;
         }
@@ -291,15 +301,23 @@ int AUXCommand::responseDataSize()
                 return -1;
         }
     }
+    else if (m_Destination == BAT && m_Command == GET_VOLTAGE)
+    {
+        return 6;
+    }
     else
     {
         switch (m_Command)
         {
+            case FOC_GET_HS_POSITIONS:
+                return 8;
             case MC_GET_POSITION:
             case MC_GET_CORDWRAP_POS:
                 return 3;
             case GET_VER:
                 return 4;
+            case MC_GET_MODEL:
+                return 2;
             case MC_SLEW_DONE:
             case MC_SEEK_DONE:
             case MC_LEVEL_DONE:
@@ -352,6 +370,8 @@ const char * AUXCommand::moduleName(AUXTargets n)
             return "APP";
         case GPS :
             return "GPS";
+        case FOCUS :
+            return "FOCUS";
         case WiFi:
             return "WiFi";
         case BAT :

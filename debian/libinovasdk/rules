@@ -1,7 +1,17 @@
 #!/usr/bin/make -f
 
-include /usr/share/cdbs/1/rules/debhelper.mk
-include /usr/share/cdbs/1/class/cmake.mk
+export DEB_BUILD_OPTIONS = parallel=$(shell nproc)
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_CFLAGS_MAINT_APPEND = -Wall -fno-strict-aliasing -std=gnu11 -fPIC
+export DEB_CXXFLAGS_MAINT_APPEND = -Wall -fno-strict-aliasing -fPIC
 
-DEB_SRCDIR=libinovasdk
-DEB_DH_SHLIBDEPS_ARGS=-u--ignore-missing-info
+%:
+	dh $@ --buildsystem=cmake --sourcedirectory=libinovasdk
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		-DCMAKE_INSTALL_RPATH_USE_LINK_PATH=ON \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+override_dh_shlibdeps:
+	dh_shlibdeps -- --ignore-missing-info

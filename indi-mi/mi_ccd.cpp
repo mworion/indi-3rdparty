@@ -29,6 +29,7 @@
 #include <deque>
 #include <memory>
 #include <utility>
+#include <stdlib.h>
 
 #define TEMP_THRESHOLD  0.2  /* Differential temperature threshold (°C) */
 #define TEMP_COOLER_OFF 100  /* High enough temperature for the camera cooler to turn off (°C) */
@@ -39,7 +40,22 @@
 // to its variant (indi_mi_ccd_usb and indi_mi_ccd_eth). The main function will
 // fetch from std args the binary name and ISInit will create the appropriate
 // driver afterwards.
-extern char *__progname;
+#ifdef __APPLE__
+// getprogname() is a BSD/Darwin function present in the runtime but hidden from
+// <stdlib.h> when _POSIX_C_SOURCE or _XOPEN_SOURCE are defined. Forward-declare it
+// explicitly to bypass the header visibility guard.
+extern "C" const char *getprogname(void);
+#endif
+
+static const char *getProgName()
+{
+#ifdef __APPLE__
+    return getprogname();
+#else
+    extern char *__progname;
+    return __progname;
+#endif
+}
 
 static char *rtrim(char *str)
 {
@@ -67,7 +83,7 @@ static class Loader
 
 Loader::Loader()
 {
-    if (strstr(__progname, "indi_mi_ccd_eth"))
+    if (strstr(getProgName(), "indi_mi_ccd_eth"))
     {
         gxccd_enumerate_eth([](int id)
         {
@@ -76,7 +92,7 @@ Loader::Loader()
     }
     else
     {
-        // "__progname" shoud be indi_mi_ccd_usb, however accept all names as USB
+        // PROGNAME should be indi_mi_ccd_usb, however accept all names as USB
         gxccd_enumerate_usb([](int id)
         {
             loader.initCameras.emplace_back(id, false);
@@ -111,12 +127,12 @@ MICCD::MICCD(int camId, bool eth) : FilterInterface(this)
     {
         gxccd_get_last_error(cameraHandle, sp, sizeof(sp));
         IDLog("Error getting MI camera info: %s.\n", sp);
-        strncpy(name, "MI Camera", MAXINDIDEVICE);
+        snprintf(name, sizeof(name), "MI Camera");
     }
     else
     {
         rtrim(sp);
-        snprintf(name, MAXINDINAME, "MI %s", sp);
+        snprintf(name, sizeof(name), "MI %s", sp);
         IDLog("Detected camera: %s.\n", name);
     }
 
@@ -153,8 +169,8 @@ bool MICCD::initProperties()
     INDI::CCD::initProperties();
     INDI::FilterInterface::initProperties(FILTER_TAB);
 
-    FilterSlotN[0].min = 1;
-    FilterSlotN[0].max = numFilters;
+    FilterSlotNP[0].setMin(1);
+    FilterSlotNP[0].setMax(numFilters);
 
     CaptureFormat mono = {"INDI_MONO", "Mono", 16, true};
     addCaptureFormat(mono);
@@ -424,9 +440,9 @@ bool MICCD::setupParams()
     int expTime = 0;
     gxccd_get_integer_parameter(cameraHandle, GIP_MINIMAL_EXPOSURE, &expTime);
     minExpTime = expTime / 1000000.0; // convert to seconds
-    PrimaryCCD.setMinMaxStep("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", minExpTime, 3600, 1, false);
+    PrimaryCCD.setMinMaxStep("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", minExpTime, 3600, 1, true);
 
-    if (!sim && maxGainValue == 0)
+    if (!sim && maxGainValue <= 0)
     {
         float gain = 0;
         if (gxccd_get_value(cameraHandle, GV_ADC_GAIN, &gain) < 0)
@@ -464,7 +480,7 @@ bool MICCD::setupParams()
 int MICCD::SetTemperature(double temperature)
 {
     // If there difference, for example, is less than TEMP_THRESHOLD degrees, let's immediately return OK.
-    if (fabs(temperature - TemperatureN[0].value) < TEMP_THRESHOLD)
+    if (fabs(temperature - TemperatureNP[0].getValue()) < TEMP_THRESHOLD)
         return 1;
 
     TemperatureRequest = temperature;
@@ -805,11 +821,9 @@ bool MICCD::ISNewText(const char *dev, const char *name, char *texts[], char *na
 {
     if (strcmp(dev, getDeviceName()) == 0)
     {
-        if (!strcmp(name, FilterNameTP->name))
-        {
-            INDI::FilterInterface::processText(dev, name, texts, names, n);
+        if (INDI::FilterInterface::processText(dev, name, texts, names, n))
             return true;
-        }
+
     }
 
     return INDI::CCD::ISNewText(dev, name, texts, names, n);
@@ -819,11 +833,9 @@ bool MICCD::ISNewNumber(const char *dev, const char *name, double values[], char
 {
     if (strcmp(dev, getDeviceName()) == 0)
     {
-        if (!strcmp(name, FilterSlotNP.name))
-        {
-            INDI::FilterInterface::processNumber(dev, name, values, names, n);
+        if (INDI::FilterInterface::processNumber(dev, name, values, names, n))
             return true;
-        }
+
 
         if (!strcmp(name, FanNP.name))
         {
@@ -927,10 +939,10 @@ void MICCD::updateTemperature()
 
     if (isSimulation())
     {
-        ccdtemp = TemperatureN[0].value;
-        if (TemperatureN[0].value < TemperatureRequest)
+        ccdtemp = TemperatureNP[0].getValue();
+        if (TemperatureNP[0].getValue() < TemperatureRequest)
             ccdtemp += TEMP_THRESHOLD;
-        else if (TemperatureN[0].value > TemperatureRequest)
+        else if (TemperatureNP[0].getValue() > TemperatureRequest)
             ccdtemp -= TEMP_THRESHOLD;
 
         ccdpower = 30;
@@ -953,7 +965,7 @@ void MICCD::updateTemperature()
         }
     }
 
-    TemperatureN[0].value = ccdtemp;
+    TemperatureNP[0].setValue(ccdtemp);
     CoolerN[0].value      = ccdpower * 100.0;
 
     //    if (TemperatureNP.s == IPS_BUSY && fabs(TemperatureN[0].value - TemperatureRequest) <= TEMP_THRESHOLD)
@@ -966,7 +978,7 @@ void MICCD::updateTemperature()
     if (err)
     {
         if (err & 1)
-            TemperatureNP.s = IPS_ALERT;
+            TemperatureNP.setState(IPS_ALERT);
         if (err & 2)
             CoolerNP.s = IPS_ALERT;
     }
@@ -975,7 +987,7 @@ void MICCD::updateTemperature()
         CoolerNP.s = IPS_OK;
     }
 
-    IDSetNumber(&TemperatureNP, nullptr);
+    TemperatureNP.apply();
     IDSetNumber(&CoolerNP, nullptr);
     temperatureID = IEAddTimer(getCurrentPollingPeriod(), MICCD::updateTemperatureHelper, this);
 }
@@ -1003,50 +1015,48 @@ bool MICCD::saveConfigItems(FILE *fp)
     return true;
 }
 
-void MICCD::addFITSKeywords(INDI::CCDChip *targetChip)
+void MICCD::addFITSKeywords(INDI::CCDChip *targetChip, std::vector<INDI::FITSRecord> &fitsKeywords)
 {
-    INDI::CCD::addFITSKeywords(targetChip);
+    INDI::CCD::addFITSKeywords(targetChip, fitsKeywords);
 
     char svalue[256];
     int ivalue = 0;
-    int status = 0;
-    auto fptr = *targetChip->fitsFilePointer();
 
     if (hasGain)
-        fits_update_key_dbl(fptr, "GAIN", GainN[0].value, 3, "Gain", &status);
+        fitsKeywords.push_back({"GAIN", GainN[0].value, 3, "Gain"});
 
     if (!gxccd_get_integer_parameter(cameraHandle, GIP_MAX_PIXEL_VALUE, &ivalue))
-        fits_update_key_lng(fptr, "DATAMAX", ivalue, "", &status);
+        fitsKeywords.push_back({"DATAMAX", ivalue, nullptr});
 
     if (numReadModes > 0)
     {
         ivalue = IUFindOnSwitchIndex(&ReadModeSP);
-        strncpy(svalue, ReadModeS[ivalue].label, sizeof(svalue));
+        snprintf(svalue, sizeof(svalue), "%s", ReadModeS[ivalue].label);
     }
     else
     {
         ivalue = 0;
-        strncpy(svalue, "No read mode", sizeof(svalue));
+        snprintf(svalue, sizeof(svalue), "No read mode");
     }
-    fits_update_key_lng(fptr, "READMODE", ivalue, svalue, &status);
+    fitsKeywords.push_back({"READMODE", ivalue, svalue});
 
     if (!gxccd_get_string_parameter(cameraHandle, GSP_CHIP_DESCRIPTION, svalue, 256))
     {
         rtrim(svalue);
-        fits_update_key_str(fptr, "CHIPTYPE", svalue, "", &status);
+        fitsKeywords.push_back({"CHIPTYPE", svalue, nullptr});
 
         if (!strcmp(svalue, "GSENSE4040"))
         {
             // we use hardcoded values here, because:
             // - so far there is no possibility to read / set HDR threshold in libgxccd
             // - it's not even easy to find out if the camera supports HDR...
-            fits_update_key_lng(fptr, "HDRTHRES", 3600, "", &status);
+            fitsKeywords.push_back({"HDRTHRES", 3600, nullptr});
         }
     }
 
     if (canDoPreflash)
     {
-        fits_update_key_dbl(fptr, "PREFLASH", PreflashN[0].value, 3, "seconds", &status);
-        fits_update_key_lng(fptr, "NUM-CLR", PreflashN[1].value, "", &status);
+        fitsKeywords.push_back({"PREFLASH", PreflashN[0].value, 3, "seconds"});
+        fitsKeywords.push_back({"NUM-CLR", PreflashN[1].value, 3, nullptr});
     }
 }

@@ -1,0 +1,41 @@
+# Astrolabs ScopeLink - access rights and device name
+#
+# Copyright (C) 2026 Astrolabs Hungary Kft.
+#
+# Owner:      Bence Toth (Astrolabs Hungary Kft.) <bence.toth@astrolabs.hu>
+# Maintainer: Bence Toth (Astrolabs Hungary Kft.) <bence.toth@astrolabs.hu>
+#
+# This program is free software; you can redistribute it and/or modify it under the terms of the GNU
+# General Public License as published by the Free Software Foundation; either version 2 of the License,
+# or (at your option) any later version.
+#
+# Without this the controller enumerates as /dev/ttyACMn owned by root:dialout, so the driver only works
+# for users who have been added to the dialout group.
+#
+# Astrolabs has been assigned two product identifiers under STMicroelectronics' vendor identifier, one for
+# each side of the generation 4 split: a5d4 for generation 4 and onwards, a5d3 for generation 3 and below.
+# Those two matches are exact - nothing else reports them - so they carry a name as well as the rights. The
+# firmware sets its own manufacturer and product strings alongside them, which is also what makes the
+# by-id path read usb-Astrolabs_ScopeLink_<serial>-if00 rather than ST's default.
+#
+# /dev/scopelink is the convenience for the ordinary case of one controller. Two of them plugged in at once
+# both claim it and one wins, so a profile that has to name a particular unit should point at that unit's
+# /dev/serial/by-id path instead, which is per unit by construction.
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="a5d4", MODE="0660", GROUP="dialout", TAG+="uaccess", SYMLINK+="scopelink"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="a5d3", MODE="0660", GROUP="dialout", TAG+="uaccess", SYMLINK+="scopelink"
+
+# Controllers flashed before the assignment report ST's generic Virtual COM Port pair, 0483:5740, which
+# every STM32 device running the stock USB CDC stack also reports - Nucleo boards, other vendors'
+# controllers, home-built focusers - and set no product string either: such a unit reports ST's default,
+# "STM32 Virtual ComPort in FS Mode". Nothing in those descriptors distinguishes a ScopeLink from any other
+# stock-stack STM32 device, so this line deliberately carries no SYMLINK: it would be handing the name
+# "scopelink" to hardware that is not one.
+#
+# Matching broadly for access rights is harmless: it grants the user at the console access to a serial
+# device they plugged in themselves, which is what a desktop distribution does for CDC devices anyway. The
+# stable per-unit name for one of these is the one systemd already derives from its USB serial number:
+#
+#     /dev/serial/by-id/usb-STMicroelectronics_STM32_Virtual_ComPort_in_FS_Mode_205E35793630-if00
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", MODE="0660", GROUP="dialout", TAG+="uaccess"

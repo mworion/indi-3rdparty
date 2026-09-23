@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2022 The Player One Astronomy Co., Ltd.
+** Copyright (C) 2025 The Player One Astronomy Co., Ltd.
 ** This software is the secondary software development kit (SDK) for
 ** the astronomy filter wheel made by Player One Astronomy Co., Ltd.
 ** Player One Astronomy Co., Ltd (hereinafter referred to as "the company") owns its copyright.
@@ -120,7 +120,7 @@ POA_PW_API  PWErrors POAGetPWPropertiesByHandle(int Handle, PWProperties *pProp)
 
 
 /**
- * @brief POAOpenPW open the PW, note: the following API functions need to open the PW first, NOTE: When opened successfully, phoenix filter wheel will goto 1st position.
+ * @brief POAOpenPW open the PW, note: the following API functions need to open the PW first
  *
  * @param Handle (input), get from in the PWProperties structure, use POAGetPWProperties function
  *
@@ -156,6 +156,7 @@ POA_PW_API  PWErrors POAClosePW(int Handle);
  *         PW_ERROR_NOT_OPENED: the PW is not opened
  *         PW_ERROR_IS_MOVING: the PW is moving
  *         PW_ERROR_OPERATION_FAILED: operation failed
+ *         PW_ERROR_FIRMWARE_ERROR: firmware error,may be filter position and hole are not aligned, please call POAResetPW
  */
 POA_PW_API  PWErrors POAGetCurrentPosition(int Handle, int *pPosition);
 
@@ -338,7 +339,7 @@ POA_PW_API int POAGetPWAPIVer();
 /**
  * @brief POAGetPWSDKVer: get the sdk version
  *
- * @return point to const char* version, eg: 1.0.11.17
+ * @return point to const char* version, eg: 1.0.1
  */
 POA_PW_API const char* POAGetPWSDKVer();
 

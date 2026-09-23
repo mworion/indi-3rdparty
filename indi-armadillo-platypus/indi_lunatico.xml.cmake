@@ -11,6 +11,12 @@
         </device>
     </devGroup>
     <devGroup group="Auxiliary">
+        <device label="DragonFly Controller" manufacturer="Lunatico">
+            <driver name="DragonFly Controller">indi_dragonfly</driver>
+            <version>@LUNATICO_VERSION_MAJOR@.@LUNATICO_VERSION_MINOR@</version>
+        </device>
+    </devGroup>
+    <devGroup group="Rotators">
         <device label="Seletek Rotator" manufacturer="Lunatico">
             <driver name="Seletek Rotator">indi_seletek_rotator</driver>
             <version>@LUNATICO_VERSION_MAJOR@.@LUNATICO_VERSION_MINOR@</version>

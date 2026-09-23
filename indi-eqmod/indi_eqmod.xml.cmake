@@ -5,8 +5,8 @@
                 <driver name="EQMod Mount">indi_eqmod_telescope</driver>
                 <version>@EQMOD_VERSION_MAJOR@.@EQMOD_VERSION_MINOR@</version>
         </device>
-        <device label="SkyAdventurer GTi" manufacturer="SkyWatcher">
-                <driver name="SkyAdventurer GTi">indi_skyadventurergti_telescope</driver>
+        <device label="Star Adventurer GTi" manufacturer="SkyWatcher">
+                <driver name="Star Adventurer GTi">indi_staradventurergti_telescope</driver>
                 <version>@EQMOD_VERSION_MAJOR@.@EQMOD_VERSION_MINOR@</version>
         </device>
         <device label="AZ-GTi Equatorial WiFi" manufacturer="SkyWatcher">
@@ -23,6 +23,14 @@
         </device>
         <device label="AHP GT Mount" manufacturer="AHP">
                 <driver name="AHP GT Mount">indi_ahpgt_telescope</driver>
+                <version>@EQMOD_VERSION_MAJOR@.@EQMOD_VERSION_MINOR@</version>
+        </device>
+        <device label="Wave 150i" manufacturer="SkyWatcher">
+                <driver name="EQMod Mount">indi_eqmod_telescope</driver>
+                <version>@EQMOD_VERSION_MAJOR@.@EQMOD_VERSION_MINOR@</version>
+        </device>
+        <device label="Wave 100i" manufacturer="SkyWatcher">
+                <driver name="EQMod Mount">indi_eqmod_telescope</driver>
                 <version>@EQMOD_VERSION_MAJOR@.@EQMOD_VERSION_MINOR@</version>
         </device>
 </devGroup>

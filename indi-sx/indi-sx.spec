@@ -1,6 +1,6 @@
 %define __cmake_in_source_build %{_vpath_builddir}
 Name: indi-sx
-Version:2.0.0.git
+Version:2.1.3.git
 Release: %(date -u +%%Y%%m%%d%%H%%M%%S)%{?dist}
 Summary: Instrument Neutral Distributed Interface 3rd party drivers
 
@@ -51,7 +51,7 @@ and scalable. It supports common DCS functions such as remote control,
 data acquisition, monitoring, and a lot more. This is a 3rd party driver.
 
 
-%prep -v
+%prep
 %autosetup -v -p1 -n indi-3rdparty-master
 
 %build
@@ -71,7 +71,7 @@ make DESTDIR=%{buildroot} install
 %files
 %{_bindir}/*
 %{_datadir}/indi
-/lib/udev/rules.d/99-sx.rules
+/usr/lib/udev/rules.d/99-sx.rules
 
 %changelog
 * Sun Jul 19 2020 Jim Howard <jh.xsnrg+fedora@gmail.com> 1.8.7.git-1

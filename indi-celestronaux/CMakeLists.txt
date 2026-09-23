@@ -1,6 +1,7 @@
 ########### Celestron AUX INDI driver ##############
+cmake_minimum_required(VERSION 3.16)
 PROJECT(indi-celestronaux C CXX)
-cmake_minimum_required(VERSION 3.0)
+
 
 include(GNUInstallDirs)
 
@@ -13,7 +14,7 @@ find_package(ZLIB REQUIRED)
 find_package(GSL REQUIRED)
 
 set(CAUX_VERSION_MAJOR 1)
-set(CAUX_VERSION_MINOR 2)
+set(CAUX_VERSION_MINOR 8)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config.h )
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/indi_celestronaux.xml.cmake ${CMAKE_CURRENT_BINARY_DIR}/indi_celestronaux.xml )
@@ -26,7 +27,7 @@ include_directories( ${EV_INCLUDE_DIR})
 
 include(CMakeCommon)
 
-add_executable(indi_celestron_aux auxproto.cpp celestronaux.cpp)
+add_executable(indi_celestron_aux auxproto.cpp celestronaux.cpp adaptive_tuner.cpp)
 target_link_libraries(indi_celestron_aux ${INDI_LIBRARIES} ${NOVA_LIBRARIES} ${GSL_LIBRARIES})
 install(TARGETS indi_celestron_aux RUNTIME DESTINATION bin)
 

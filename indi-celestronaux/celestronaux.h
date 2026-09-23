@@ -4,6 +4,7 @@
     Copyright (C) 2020 Paweł T. Jochym
     Copyright (C) 2020 Fabrizio Pollastri
     Copyright (C) 2020-2022 Jasem Mutlaq
+    Copyright (C) 2026 Sébastien Valat
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Lesser General Public
@@ -26,6 +27,7 @@
 
 #include <indicom.h>
 #include <indiguiderinterface.h>
+#include <indifocuserinterface.h>
 #include <inditelescope.h>
 #include <indielapsedtimer.h>
 #include <inditimer.h>
@@ -39,10 +41,12 @@
 #include <termios.h>
 
 #include "auxproto.h"
+#include "adaptive_tuner.h"
 
 class CelestronAUX :
     public INDI::Telescope,
     public INDI::GuiderInterface,
+    public INDI::FocuserInterface,
     public INDI::AlignmentSubsystem::AlignmentSubsystemForDrivers
 {
     public:
@@ -78,6 +82,32 @@ class CelestronAUX :
         {
             FORWARD,
             REVERSE
+        };
+
+        enum TrackingWay
+        {
+            BY_RATE,
+            BY_MODE,
+        };
+
+        enum GuidingMode
+        {
+            GUIDE_BY_PULSE,
+            GUIDE_BY_RATE_SHIFT
+        };
+
+        enum MountVersion
+        {
+            GPS_Nexstar       = 0x0001,
+            SLT_Nexstar       = 0x0783,
+            SE_5_4            = 0x0b83,
+            SE_8_6            = 0x0c82,
+            CPC_Deluxe        = 0x1189,
+            Series_GT         = 0x1283,
+            AVX               = 0x1485,
+            Evolution_Nexstar = 0x1687,
+            CGX               = 0x1788,
+            Advanced_GT       = 0x0682
         };
 
         // Previous motion direction
@@ -119,6 +149,10 @@ class CelestronAUX :
         virtual IPState GuideSouth(uint32_t ms) override;
         virtual IPState GuideEast(uint32_t ms) override;
         virtual IPState GuideWest(uint32_t ms) override;
+
+        virtual IPState MoveRelFocuser(FocusDirection dir, uint32_t ticks) override;
+        virtual IPState MoveAbsFocuser (uint32_t targetTicks) override;
+        virtual bool AbortFocuser () override;
 
         //virtual bool HandleGetAutoguideRate(INDI_HO_AXIS axis, uint8_t rate);
         //virtual bool HandleSetAutoguideRate(INDI_EQ_AXIS axis);
@@ -166,6 +200,8 @@ class CelestronAUX :
         bool isHomingDone(INDI_HO_AXIS axis);
         bool m_HomingProgress[2] = {false, false};
 
+        bool enforceSlewLimits();
+
         /////////////////////////////////////////////////////////////////////////////////////
         /// Tracking
         /////////////////////////////////////////////////////////////////////////////////////
@@ -173,6 +209,7 @@ class CelestronAUX :
         bool SetTrackMode(uint8_t mode) override;
         bool SetTrackRate(double raRate, double deRate) override;
         void resetTracking();
+        void restoreTrackingRateMode(INDI_HO_AXIS axis);
 
         /**
          * @brief TrackByRate Set axis tracking rate in arcsecs/sec.
@@ -204,6 +241,15 @@ class CelestronAUX :
         bool setCordWrapPosition(uint32_t steps);
         uint32_t getCordWrapPosition();
 
+        /////////////////////////////////////////////////////////////////////////////////////
+        /// Focus
+        /////////////////////////////////////////////////////////////////////////////////////
+        bool getFocusLimits();
+        bool getFocusPosition();
+        bool getFocusStatus();
+        bool focusTo(uint32_t steps);
+        bool focusByRate(int8_t rate);
+
     private:
         /////////////////////////////////////////////////////////////////////////////////////
         /// Misc
@@ -213,10 +259,11 @@ class CelestronAUX :
         {
             return m_Location.latitude >= 0;
         }
+        bool startupWithoutHC();
+        bool getModel(AUXTargets target);
         bool getVersion(AUXTargets target);
         void getVersions();
         void hex_dump(char *buf, AUXBuffer data, size_t size);
-
 
         double AzimuthToDegrees(double degree);
         double DegreesToAzimuth(double degree);
@@ -255,11 +302,16 @@ class CelestronAUX :
 
         // Guiding offset in steps
         // For each pulse, we modify the offset so that we can add it to our current tracking traget
-        int32_t m_GuideOffset[2] = {0, 0};
-        double m_TrackRates[2] = {TRACKRATE_SIDEREAL, 0};
+        double m_GuideOffset[2] = {0, 0};
 
-        // approach distance
-        double Approach {1};
+        // Remind which tracking mode & speed we have to restore after a GUIDING RATE_SHIFT update
+        double m_TrackRates[2] = {TRACKRATE_SIDEREAL, 0};
+        uint16_t m_TrackModes[2] = {AUX_SIDEREAL, AUX_STOP};
+        TrackingWay m_TrackWay[2] = {BY_MODE, BY_MODE};
+
+        // Should we guid by using PULSE command or by updating temporarly the GUIDING
+        GuidingMode m_GuideMode = GUIDE_BY_PULSE;
+
         TelescopePierSide m_TargetPierSide {PIER_UNKNOWN};
 
         // Tracking targets
@@ -288,12 +340,14 @@ class CelestronAUX :
         bool readAUXResponse(AUXCommand c);
         bool processResponse(AUXCommand &cmd);
         int sendBuffer(AUXBuffer buf);
+        void formatModelString(char *s, int n, uint16_t model);
         void formatVersionString(char *s, int n, uint8_t *verBuf);
 
         // GPS Emulation
         bool m_GPSEmulation {false};
 
         // Firmware
+        uint16_t m_ModelVersion {0};
         uint8_t m_MainBoardVersion[4] {0};
         uint8_t m_AltitudeVersion[4] {0};
         uint8_t m_AzimuthVersion[4] {0};
@@ -301,11 +355,20 @@ class CelestronAUX :
         uint8_t m_BATVersion[4] {0};
         uint8_t m_WiFiVersion[4] {0};
         uint8_t m_GPSVersion[4] {0};
+        uint8_t m_FocusVersion[4] {0};
 
         // Coord Wrap
         bool m_CordWrapActive {false};
         int32_t m_CordWrapPosition {0};
         uint32_t m_RequestedCordwrapPos;
+
+        // Focus
+        bool m_FocusEnabled {false};
+        uint32_t m_FocusPosition {0};
+        uint32_t m_FocusLimitMax {0};
+        uint32_t m_FocusLimitMin {0xffffffff};
+        AxisStatus m_FocusStatus {STOPPED};
+
 
         // Manual Slewing NSWE
         bool m_ManualMotionActive { false };
@@ -326,6 +389,7 @@ class CelestronAUX :
         int aux_tty_read(char *buf, int bufsiz, int timeout, int *n);
         int aux_tty_write (char *buf, int bufsiz, float timeout, int *n);
         bool tty_set_speed(speed_t speed);
+        bool configureSerialPort(bool useFlowControl);
 
         // connection
         bool m_IsRTSCTS {false};
@@ -336,22 +400,37 @@ class CelestronAUX :
         ///////////////////////////////////////////////////////////////////////////////
 
         // Firmware
-        INDI::PropertyText FirmwareTP {7};
-        enum {FW_HC, FW_MB, FW_AZM, FW_ALT, FW_WiFi, FW_BAT, FW_GPS};
-        // Mount type
-        //INDI::PropertySwitch MountTypeSP {3};
+        INDI::PropertyText FirmwareTP {0};
+        enum {FW_MODEL, FW_HC, FW_MB, FW_AZM, FW_ALT, FW_WiFi, FW_BAT, FW_GPS, FW_FOCUS};
+
+        // Evolution Battery Status
+        INDI::PropertyText BatteryStatusTP {3};
+        enum { BATT_LEVEL, BATT_VOLTAGE, BATT_STATUS };
+        bool getBatteryStatus();
+        struct timeval lastBatteryUpdate {0, 0};
 
         // Mount Cord wrap Toogle
         INDI::PropertySwitch CordWrapToggleSP {2};
 
         // Mount Coord wrap Position
-        INDI::PropertySwitch CordWrapPositionSP {4};
-        enum { CORDWRAP_N, CORDWRAP_E, CORDWRAP_S, CORDWRAP_W };
+        INDI::PropertySwitch CordWrapPositionSP {8};
+        enum { CORDWRAP_N, CORDWRAP_NE, CORDWRAP_E, CORDWRAP_SE, CORDWRAP_S, CORDWRAP_SW, CORDWRAP_W, CORDWRAP_NW };
 
         // Cordwrap base (0-encoder/True directions)
         // Use 0-encoders / Sky directions as base for parking and cordwrap
         INDI::PropertySwitch CordWrapBaseSP {2};
         enum {CW_BASE_ENC, CW_BASE_SKY};
+
+        // Slew limits
+        INDI::PropertySwitch Axis1LimitToggleSP {2};
+        INDI::PropertySwitch Axis2LimitToggleSP {2};
+        INDI::PropertyNumber SlewLimitPositionNP {4};
+        enum { SLEW_LIMIT_AXIS1_MIN, SLEW_LIMIT_AXIS1_MAX, SLEW_LIMIT_AXIS2_MIN, SLEW_LIMIT_AXIS2_MAX };
+
+
+        // Approach Direction
+        INDI::PropertySwitch ApproachDirectionSP {2};
+        enum { APPROACH_TRACKING_VECTOR, APPROACH_CONSTANT_OFFSET };
 
         // GPS emulator
         INDI::PropertySwitch GPSEmuSP {2};
@@ -363,6 +442,10 @@ class CelestronAUX :
         // Guide Rate
         INDI::PropertyNumber GuideRateNP {2};
 
+        // Guide Rate
+        INDI::PropertySwitch GuidePulseMode {2};
+        enum { PULSE_MODE_PULSE, PULSE_MODE_GUIDE_RATE };
+
         // Encoders
         INDI::PropertyNumber EncoderNP {2};
         // Angles
@@ -370,8 +453,8 @@ class CelestronAUX :
 
         int32_t m_LastTrackRate[2] = {-1, -1};
         double m_TrackStartSteps[2] = {0, 0};
-        double m_LastOffset[2] = {0, 0};
-        uint8_t m_OffsetSwitchSettle[2] = {0, 0};
+        int32_t m_LastOffset[2] = {0, 0};
+        int m_OffsetSwitchSettle[2] = {0, 0};
 
         // PID controllers
         INDI::PropertyNumber Axis1PIDNP {3};
@@ -384,6 +467,8 @@ class CelestronAUX :
         };
 
         std::unique_ptr<PID> m_Controllers[2];
+        std::unique_ptr<AdaptivePIDTuner> m_az_pid_tuner; // For Azimuth axis adaptive tuning
+        std::unique_ptr<AdaptivePIDTuner> m_al_pid_tuner; // For Altitude axis adaptive tuning
 
         INDI::PropertySwitch PortTypeSP {2};
         enum
@@ -396,12 +481,17 @@ class CelestronAUX :
 
         // Home/Level
         INDI::PropertySwitch HomeSP {3};
+
         enum
         {
             HOME_AXIS1,
             HOME_AXIS2,
             HOME_ALL
         };
+
+        // Adaptive PID Tuning Toggles
+        INDI::PropertySwitch AdaptiveTuningAzSP {2}; // For Azimuth Axis
+        INDI::PropertySwitch AdaptiveTuningAlSP {2}; // For Altitude Axis
 
         typedef enum { ALT_AZ, EQ_FORK, EQ_GEM } MountType;
         MountType m_MountType {ALT_AZ};
@@ -422,12 +512,22 @@ class CelestronAUX :
         static constexpr double STEPS_PER_HOUR {STEPS_PER_REVOLUTION / 24.0};
         static constexpr double HOURS_PER_STEP {24.0 / STEPS_PER_REVOLUTION};
 
-        // Measured rate that would result in 1 step/sec
-        static constexpr uint32_t GAIN_STEPS {80};
+        // Measured rate that would result in 1 step/sec - only approximate
+        // static constexpr uint32_t GAIN_STEPS {80};
+        
+        // Rate based on geometric analysis and testing against SkySafari 7, simulator and real mount:
+        // Logical unit for guiding commands is 1/1024 arcsec/sec.
+        // Steps per arcsecond = 16777216 / (360 * 3600) = 16777216 / 1296000
+        // Scaling Factor (Units -> Steps/sec) = 1024 * (1296000 / 16777216)
+        // Factor = (1024 * 1296000) / 16777216  = 1327104000 / 16777216
+        // Simplified Rational Factor = 10125 / 128
+        // Steps/sec = Value * (10125 / 128) = Value * 79.1015625
+        static constexpr double GAIN_STEPS {10125.0 / 128};
 
         // MC_SET_POS_GUIDERATE & MC_SET_NEG_GUIDERATE use 24bit number rate in
         static constexpr uint8_t RATE_PER_ARCSEC {4};
 
+        static constexpr size_t MAX_AUX_PACKET_SIZE {258};
         static constexpr uint32_t BUFFER_SIZE {10240};
         // seconds
         static constexpr uint8_t READ_TIMEOUT {1};
@@ -437,6 +537,7 @@ class CelestronAUX :
         static constexpr const char *CORDWRAP_TAB {"Coord Wrap"};
         static constexpr const char *MOUNTINFO_TAB {"Mount Info"};
         // Track modes
+        static constexpr uint16_t AUX_STOP {0x0000};
         static constexpr uint16_t AUX_SIDEREAL {0xffff};
         static constexpr uint16_t AUX_SOLAR {0xfffe};
         static constexpr uint16_t AUX_LUNAR {0xfffd};

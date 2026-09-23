@@ -1,14 +1,15 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 PROJECT(indi_gphoto C CXX)
 
 set(INDI_GPHOTO_VERSION_MAJOR 3)
-set(INDI_GPHOTO_VERSION_MINOR 2)
+set(INDI_GPHOTO_VERSION_MINOR 5)
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
 include(GNUInstallDirs)
 
-set(UDEVRULES_INSTALL_DIR "/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
+option(INDI_INSTALL_UDEV_RULES "Install UDEV rules" On)
+set(UDEVRULES_INSTALL_DIR "/usr/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
 
 SET(BIN_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/bin")
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall" )
@@ -52,14 +53,6 @@ if (HAVE_LIBRAW_SENSOR_TEMPERATURE2)
   message(STATUS "Found SensorTemperature in libraw_metadata_common_t 'libraw/libraw_types.h'")
 endif ()
 
-if (INDI_WEBSOCKET)
-    find_package(websocketpp REQUIRED)
-    find_package(Boost COMPONENTS system thread)
-    include_directories (${Boost_INCLUDE_DIRS})
-    add_definitions(-DHAVE_WEBSOCKET)
-    SET(HAVE_WEBSOCKET 1)
-endif()
-
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config.h )
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/indi_gphoto.xml.cmake ${CMAKE_CURRENT_BINARY_DIR}/indi_gphoto.xml )
 
@@ -98,23 +91,38 @@ add_executable(indi_gphoto_ccd ${indigphoto_SRCS})
 
 target_link_libraries(indi_gphoto_ccd ${INDI_LIBRARIES} ${CFITSIO_LIBRARIES} ${GPHOTO2_LIBRARY} ${GPHOTO2_PORT_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} ${JPEG_LIBRARIES} ${LibRaw_LIBRARIES} ${ZLIB_LIBRARIES})
 
-if (HAVE_WEBSOCKET)
-    target_link_libraries(indi_gphoto_ccd ${Boost_LIBRARIES})
-endif()
-
 install(TARGETS indi_gphoto_ccd RUNTIME DESTINATION bin )
 
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/make_gphoto_symlink.cmake
-"exec_program(\"${CMAKE_COMMAND}\" ARGS -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_canon_ccd)\n
-exec_program(\"${CMAKE_COMMAND}\" ARGS -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_nikon_ccd)\n
-exec_program(\"${CMAKE_COMMAND}\" ARGS -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_pentax_ccd)\n
-exec_program(\"${CMAKE_COMMAND}\" ARGS -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_sony_ccd)\n
-exec_program(\"${CMAKE_COMMAND}\" ARGS -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_fuji_ccd)\n")
+"execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_canon_ccd)\n
+execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_nikon_ccd)\n
+execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_pentax_ccd)\n
+execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_sony_ccd)\n
+execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink indi_gphoto_ccd \$ENV{DESTDIR}${BIN_INSTALL_DIR}/indi_fuji_ccd)\n")
 set_target_properties(indi_gphoto_ccd PROPERTIES POST_INSTALL_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/make_gphoto_symlink.cmake)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_gphoto.xml DESTINATION ${INDI_DATA_DIR})
 
+# Build the camera test application
+add_executable(gphoto_camera_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/gphoto_camera_test.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/gphoto_driver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/dsusbdriver.cpp
+)
+
+target_link_libraries(gphoto_camera_test
+    ${GPHOTO2_LIBRARY}
+    ${GPHOTO2_PORT_LIBRARY}
+    ${CMAKE_THREAD_LIBS_INIT}
+    ${INDI_LIBRARIES}
+    ${JPEG_LIBRARIES}
+    ${LibRaw_LIBRARIES}
+    ${ZLIB_LIBRARIES}
+)
+
+install(TARGETS gphoto_camera_test DESTINATION bin)
+
 # Disable automount for DSLR cameras
-IF (UNIX AND NOT APPLE)
+IF (UNIX AND NOT APPLE AND INDI_INSTALL_UDEV_RULES)
     install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/85-disable-dslr-automout.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
 ENDIF ()

@@ -33,8 +33,11 @@
 #include <unistd.h>
 #include <deque>
 #include <memory>
+#include <thread>
+#include <chrono>
 
 //#define SIMULATION
+#define WAIT_AFTER_OPEN_DEVICE
 
 static class Loader
 {
@@ -57,6 +60,10 @@ static class Loader
                 return;
             }
             int num_wheels_ok = 0;
+#ifndef WAIT_AFTER_OPEN_DEVICE
+            int interval = 250;       // millisecond
+            int elapsed_time = 0;
+#endif // WAIT_AFTER_OPEN_DEVICE
             for (int i = 0; i < num_wheels; i++)
             {
                 PWProperties info;
@@ -73,6 +80,43 @@ static class Loader
                     IDLog("ERROR: PlayerOne EFW %d POAGetPWPropertiesByHandle error %d.", i + 1, result);
                     continue;
                 }
+
+                // Skip devices with invalid/error names reported by the SDK
+                if (strcasestr(info.Name, "error") != nullptr)
+                {
+                    IDLog("ERROR: PlayerOne EFW %d has invalid name '%s', skipping.", i + 1, info.Name);
+                    continue;
+                }
+
+#ifndef WAIT_AFTER_OPEN_DEVICE
+                PWState state;
+                result = POAGetPWState(id, &state);
+                if (result != PW_OK)
+                {
+                    IDLog("ERROR: PlayerOne EFW %d POAGetPWState error %d.", i + 1, result);
+                    return;
+                }
+
+                // Wait for initial moving in case of just after plugged-in the device
+                while (state == PW_STATE_MOVING && elapsed_time < POA_EFW_TIMEOUT)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(interval));
+                    result = POAGetPWState(id, &state);
+                    if (result != PW_OK)
+                    {
+                        IDLog("ERROR: PlayerOne EFW %d POAGetPWState error %d.", i + 1, result);
+                        return;
+                    }
+                    elapsed_time += interval;
+                }
+
+                if (state == PW_STATE_MOVING)
+                {
+                    IDLog("ERROR: PlayerOne EFW %d time out initial moving. state = %d.", i + 1, state);
+                    return;
+                }
+#endif // WAIT_AFTER_OPEN_DEVICE
+
                 std::string name = "PlayerOne " + std::string(info.Name);
 
                 // If we only have a single device connected
@@ -85,6 +129,7 @@ static class Loader
                 }
                 else
                     name += " " + std::to_string(i);
+
                 wheels.push_back(std::unique_ptr<POAWHEEL>(new POAWHEEL(info, name.c_str())));
                 num_wheels_ok++;
             }
@@ -97,8 +142,8 @@ POAWHEEL::POAWHEEL(const PWProperties &info, const char *name)
 {
     fw_id              = info.Handle;
     CurrentFilter      = 0;
-    FilterSlotN[0].min = 0;
-    FilterSlotN[0].max = 0;
+    FilterSlotNP[0].setMin(0);
+    FilterSlotNP[0].setMax(0);
     setDeviceName(name);
     setVersion(PLAYERONE_VERSION_MAJOR, PLAYERONE_VERSION_MINOR);
 }
@@ -119,8 +164,8 @@ bool POAWHEEL::Connect()
     {
         LOG_INFO("Simulation connected.");
         fw_id = 0;
-        FilterSlotN[0].min = 1;
-        FilterSlotN[0].max = 8;
+        FilterSlotNP[0].setMin(1);
+        FilterSlotNP[0].setMax(8);
     }
     else if (fw_id >= 0)
     {
@@ -131,15 +176,21 @@ bool POAWHEEL::Connect()
             return false;
         }
 
-        // PlayerOne filter wheel is always reset the position to 1
-        // when we call POAOpenPW()
-        // Need to wait for moving to position 1
+#ifdef WAIT_AFTER_OPEN_DEVICE
+        PWState state;
+        result = POAGetPWState(fw_id, &state);
+        if (result != PW_OK)
+        {
+            LOGF_ERROR("%s(): POAGetPWState() = %d", __FUNCTION__, result);
+            return false;
+        }
+
+        // Wait for initial moving in case of just after plugged-in the device
         int interval = getCurrentPollingPeriod();       // millisecond
         int elapsed_time = 0;
-        PWState state;
-	do
+        while (state != PW_STATE_OPENED && elapsed_time < POA_EFW_TIMEOUT)
         {
-            usleep(interval*1000);
+            std::this_thread::sleep_for(std::chrono::milliseconds(interval));
             result = POAGetPWState(fw_id, &state);
             if (result != PW_OK)
             {
@@ -147,13 +198,14 @@ bool POAWHEEL::Connect()
                 return false;
             }
             elapsed_time += interval;
-        } while (state != PW_STATE_OPENED || elapsed_time < POA_EFW_TIMEOUT);
+        }
 
         if (state != PW_STATE_OPENED)
         {
             LOGF_ERROR("%s(): Can't open device. state = %d", __FUNCTION__, state);
             return false;
         }
+#endif // WAIT_AFTER_OPEN_DEVICE
 
         PWProperties info;
         result = POAGetPWPropertiesByHandle(fw_id, &info);
@@ -165,11 +217,19 @@ bool POAWHEEL::Connect()
 
         LOGF_INFO("Detected %d-position filter wheel.", info.PositionCount);
 
-        FilterSlotN[0].min = 1;
-        FilterSlotN[0].max = info.PositionCount;
+        FilterSlotNP[0].setMin(1);
+        FilterSlotNP[0].setMax(info.PositionCount);
 
         // get current filter
-        CurrentFilter = 0;
+        int current;
+        result = POAGetCurrentPosition(fw_id, &current);
+        if (result != PW_OK)
+        {
+            LOGF_ERROR("%s(): POAGetCurrentPosition() = %d", __FUNCTION__, result);
+            return false;
+        }
+
+        SelectFilter(current + 1);
         LOGF_DEBUG("%s(): current filter position %d", __FUNCTION__, CurrentFilter);
     }
     else
@@ -183,9 +243,7 @@ bool POAWHEEL::Connect()
 bool POAWHEEL::Disconnect()
 {
     if (isSimulation())
-    {
         LOG_INFO("Simulation disconnected.");
-    }
     else if (fw_id >= 0)
     {
         PWErrors result = POAClosePW(fw_id);
@@ -254,7 +312,7 @@ bool POAWHEEL::ISNewSwitch(const char *dev, const char *name, ISState *states, c
         if (!strcmp(name, UniDirectionalSP.name))
         {
             PWErrors rc = POASetOneWay(fw_id, !strcmp(IUFindOnSwitchName(states, names, n),
-                                                UniDirectionalS[INDI_ENABLED].name));
+                                       UniDirectionalS[INDI_ENABLED].name));
             if (rc == PW_OK)
             {
                 IUUpdateSwitch(&UniDirectionalSP, states, names, n);
@@ -273,16 +331,14 @@ bool POAWHEEL::ISNewSwitch(const char *dev, const char *name, ISState *states, c
             CalibrateS[0].s = ISS_OFF;
 
             if (isSimulation())
-            {
                 return true;
-            }
 
             CalibrateSP.s   = IPS_BUSY;
             IDSetSwitch(&CalibrateSP, nullptr);
 
             // make the set filter number busy
-            FilterSlotNP.s = IPS_BUSY;
-            IDSetNumber(&FilterSlotNP, nullptr);
+            FilterSlotNP.setState(IPS_BUSY);
+            FilterSlotNP.apply();
 
             LOGF_DEBUG("Calibrating EFW %d", fw_id);
             PWErrors rc = POAResetPW(fw_id);
@@ -299,8 +355,8 @@ bool POAWHEEL::ISNewSwitch(const char *dev, const char *name, ISState *states, c
                 IDSetSwitch(&CalibrateSP, nullptr);
 
                 // reset filter slot state
-                FilterSlotNP.s = IPS_OK;
-                IDSetNumber(&FilterSlotNP, nullptr);
+                FilterSlotNP.setState(IPS_OK);
+                FilterSlotNP.apply();
                 return false;
             }
         }
@@ -354,7 +410,7 @@ bool POAWHEEL::SelectFilter(int f)
             int elapsed_time = 0;
             do
             {
-                usleep(interval*1000);
+                std::this_thread::sleep_for(std::chrono::milliseconds(interval));
                 result = POAGetCurrentPosition(fw_id, &CurrentFilter);
                 elapsed_time += interval;
             }
@@ -391,13 +447,9 @@ void POAWHEEL::TimerHit()
     QueryFilter();
 
     if (CurrentFilter != TargetFilter)
-    {
         SetTimer(getCurrentPollingPeriod());
-    }
     else
-    {
         SelectFilterDone(CurrentFilter);
-    }
 }
 
 bool POAWHEEL::saveConfigItems(FILE *fp)
@@ -437,7 +489,7 @@ void POAWHEEL::TimerCalibrate()
         IDSetSwitch(&CalibrateSP, nullptr);
     }
 
-    FilterSlotNP.s = IPS_OK;
-    IDSetNumber(&FilterSlotNP, nullptr);
+    FilterSlotNP.setState(IPS_OK);
+    FilterSlotNP.apply();
     return;
 }

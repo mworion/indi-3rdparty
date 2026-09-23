@@ -1,3 +1,117 @@
+libmallincam (60.32226.20260808) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Mon, 10 Aug 2026 08:52:13 +0800
+
+libmallincam (60.31631.20260606) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Sun, 07 Jun 2026 13:42:18 +0800
+
+libmallincam (59.31026.20260322) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Mon, 23 Mar 2026 10:43:24 +0800
+
+libmallincam (59.30594.20260120) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Wed, 21 Jan 2026 12:53:48 +0800
+
+libmallincam (59.30281.20251214) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Mon, 15 Dec 2025 08:25:17 +0800
+
+libmallincam (59.29465.20250907) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Mon, 08 Sep 2025 09:37:08 +0800
+
+libmallincam (59.29176.20250806) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Thu, 07 Aug 2025 12:50:30 +0800
+
+libmallincam (59.28981.20250715) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Wed, 16 Jul 2025 15:33:44 +0800
+
+libmallincam (57.28200.20250408) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Wed, 09 Apr 2025 10:05:28 +0800
+
+libmallincam (57.27591.20250122) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Thu, 23 Jan 2025 13:34:24 +0800
+
+libmallincam (57.27591.20250122) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Thu, 23 Jan 2025 13:31:27 +0800
+
+libmallincam (57.27348.20241224) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Wed, 25 Dec 2024 15:45:38 +0800
+
+libmallincam (57.26598.20240928) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <procom@procom.com>  Sun, 29 Sep 2024 13:28:52 +0800
+
+libmallincam (56.26054.20240714) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <>  Mon, 15 Jul 2024 09:57:03 +0800
+
+libmallincam (56.25996.20240707) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <>  Sun, 07 Jul 2024 20:31:18 +0800
+
+libmallincam (55.25633.20240519) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <>  Mon, 20 May 2024 08:37:54 +0800
+
+libmallincam (55.24621.20240204) jammy; urgency=medium
+
+  * Upstream release
+
+ -- procom <> Mon, 05 Feb 2024 08:24:08 +0800
+
+libmallincam (1.54.2) jammy; urgency=medium
+
+  * Upstream release
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Fri, 25 Aug 2023 15:00:00 +0300
+
+libmallincam (1.53.2) bullseye; urgency=medium
+
+  * Upstream release
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Tue, 20 Sep 2022 18:00:00 +0300
+
 libmallincam (1.49.1) focal; urgency=medium
 
   * Updated SDK.

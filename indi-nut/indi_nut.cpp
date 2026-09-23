@@ -37,15 +37,10 @@ NetworkUPSToolsMonitor::NetworkUPSToolsMonitor()
     setVersion(NUT_VERSION_MAJOR, NUT_VERSION_MINOR);
 
     setWeatherConnection(CONNECTION_NONE);
-
-    nutClient = new nut::TcpClient();
 }
 
 NetworkUPSToolsMonitor::~NetworkUPSToolsMonitor()
-{
-    delete nutClient;
-    nutClient = nullptr;
-}
+{ }
 
 const char *NetworkUPSToolsMonitor::getDefaultName()
 {
@@ -54,15 +49,15 @@ const char *NetworkUPSToolsMonitor::getDefaultName()
 
 bool NetworkUPSToolsMonitor::Connect()
 {
-    nutClient->connect(nutMonitorUrl[NUT_HOST].getText(), atoi(nutMonitorUrl[NUT_PORT].getText()));
-    nutClient->authenticate(nutMonitorUrl[NUT_USER].getText(), nutMonitorUrl[NUT_PASSWORD].getText());
+    nutClient.connect(nutMonitorUrl[INDEX_HOST].getText(), atoi(nutMonitorUrl[INDEX_PORT].getText()));
+    nutClient.authenticate(nutMonitorUrl[INDEX_USER].getText(), nutMonitorUrl[INDEX_PASSWORD].getText());
 
     return true;
 }
 
 bool NetworkUPSToolsMonitor::Disconnect()
 {
-    nutClient->disconnect();
+    nutClient.disconnect();
 
     return true;
 }
@@ -71,10 +66,10 @@ bool NetworkUPSToolsMonitor::initProperties()
 {
     INDI::Weather::initProperties();
 
-    nutMonitorUrl[NUT_HOST].fill("NUT_HOST", "NUT Monitor Host", nullptr);
-    nutMonitorUrl[NUT_PORT].fill("NUT_PORT", "NUT Monitor Port", "3493");
-    nutMonitorUrl[NUT_USER].fill("NUT_USER", "NUT Monitor User", nullptr);
-    nutMonitorUrl[NUT_PASSWORD].fill("NUT_PASSWORD", "NUT Monitor Password", nullptr);
+    nutMonitorUrl[INDEX_HOST].fill("NUT_HOST", "NUT Monitor Host", nullptr);
+    nutMonitorUrl[INDEX_PORT].fill("NUT_PORT", "NUT Monitor Port", "3493");
+    nutMonitorUrl[INDEX_USER].fill("NUT_USER", "NUT Monitor User", nullptr);
+    nutMonitorUrl[INDEX_PASSWORD].fill("NUT_PASSWORD", "NUT Monitor Password", nullptr);
 
     nutMonitorUrl.fill(getDeviceName(), "NUT_MON_URL", "NetworkUPSToolsMonitor", OPTIONS_TAB, IP_RW, 60, IPS_IDLE);
 
@@ -91,7 +86,7 @@ void NetworkUPSToolsMonitor::ISGetProperties(const char *dev)
 {
     INDI::Weather::ISGetProperties(dev);
 
-    defineProperty(&nutMonitorUrl);
+    defineProperty(nutMonitorUrl);
     loadConfig(true, nutMonitorUrl.getName());
 }
 
@@ -101,12 +96,12 @@ bool NetworkUPSToolsMonitor::updateProperties()
 
     if (isConnected())
     {
-        defineProperty(&nutMonitorUrl);
+        defineProperty(nutMonitorUrl);
         SetTimer(getCurrentPollingPeriod());
     }
     else
     {
-        deleteProperty(nutMonitorUrl.getName());
+        deleteProperty(nutMonitorUrl);
     }
 
     return true;
@@ -141,11 +136,11 @@ IPState NetworkUPSToolsMonitor::updateWeather()
 {
     double charge = 0;
 
-    auto devices = nutClient->getDeviceNames();
+    auto devices = nutClient.getDeviceNames();
 
     for (auto &device : devices)
     {
-        auto variables = nutClient->getDeviceVariableValue(device, "battery.charge");
+        auto variables = nutClient.getDeviceVariableValue(device, "battery.charge");
 
         if (variables.size() == 0)
             continue;
@@ -162,7 +157,7 @@ bool NetworkUPSToolsMonitor::saveConfigItems(FILE *fp)
 {
     INDI::Weather::saveConfigItems(fp);
 
-    IUSaveConfigText(fp, &nutMonitorUrl);
+    nutMonitorUrl.save(fp);
 
     return true;
 }

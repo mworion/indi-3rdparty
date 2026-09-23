@@ -67,7 +67,7 @@ using namespace INDI::AlignmentSubsystem;
 
 /* Preset Slew Speeds */
 #define SLEWMODES 11
-double slewspeeds[SLEWMODES - 1] = { 1.0, 2.0, 4.0, 8.0, 32.0, 64.0, 128.0, 600.0, 700.0, 800.0 };
+int slewspeeds[SLEWMODES - 1] = { 1, 2, 4, 8, 32, 64, 128, 600, 700, 800 };
 
 #define RA_AXIS     0
 #define DEC_AXIS    1
@@ -103,7 +103,7 @@ int timeval_subtract(struct timeval *result, struct timeval *x, struct timeval *
 }
 #endif
 
-EQMod::EQMod()
+EQMod::EQMod(): GI(this)
 {
     //ctor
     setVersion(EQMOD_VERSION_MAJOR, EQMOD_VERSION_MINOR);
@@ -120,7 +120,7 @@ EQMod::EQMod()
     DBG_COMM         = INDI::Logger::getInstance().addDebugLevel("Serial Port", "COMM");
     DBG_MOUNT        = INDI::Logger::getInstance().addDebugLevel("Verbose Mount", "MOUNT");
 
-    mount = new Skywatcher(this);
+    mount = std::make_unique<Skywatcher>(this);
 
     SetTelescopeCapability(TELESCOPE_CAN_PARK | TELESCOPE_CAN_SYNC | TELESCOPE_CAN_GOTO | TELESCOPE_CAN_ABORT |
                            TELESCOPE_HAS_TIME | TELESCOPE_HAS_LOCATION
@@ -132,13 +132,13 @@ EQMod::EQMod()
     bzero(&syncdata2, sizeof(syncdata2));
 
 #ifdef WITH_ALIGN_GEEHALEL
-    align = new Align(this);
+    align = std::make_unique<Align>(this);
 #endif
 
-    simulator = new EQModSimulator(this);
+    simulator = std::make_unique<EQModSimulator>(this);
 
 #ifdef WITH_SCOPE_LIMITS
-    horizon = new HorizonLimits(this);
+    horizon = std::make_unique<HorizonLimits>(this);
 #endif
 
     /* initialize time */
@@ -159,28 +159,18 @@ EQMod::EQMod()
     restartguidePPEC   = false;
 }
 
-EQMod::~EQMod()
-{
-    //dtor
-    delete mount;
-    mount = nullptr;
-}
-
 #if defined WITH_ALIGN || defined WITH_ALIGN_GEEHALEL
 bool EQMod::isStandardSync()
 {
-    return (strcmp(IUFindOnSwitch(AlignSyncModeSP)->name, "ALIGNSTANDARDSYNC") == 0);
+    return AlignSyncModeSP.findOnSwitch()->isNameMatch("ALIGNSTANDARDSYNC");
 }
 #endif
 
 void EQMod::setStepperSimulation(bool enable)
 {
-    if ((enable && !isSimulation()) || (!enable && isSimulation()))
-    {
-        mount->setSimulation(enable);
-        if (not simulator->updateProperties(enable))
-            LOG_WARN("setStepperSimulator: Disable/Enable error");
-    }
+    mount->setSimulation(enable);
+    if (!simulator->updateProperties(enable))
+        LOG_WARN("setStepperSimulator: Disable/Enable error");
     INDI::Telescope::setSimulation(enable);
 }
 
@@ -191,12 +181,20 @@ const char *EQMod::getDefaultName()
 
 double EQMod::getLongitude()
 {
-    return (IUFindNumber(&LocationNP, "LONG")->value);
+    auto number = LocationNP.findWidgetByName("LONG");
+    if (number)
+        return number->getValue();
+    else
+        return 0;
 }
 
 double EQMod::getLatitude()
 {
-    return (IUFindNumber(&LocationNP, "LAT")->value);
+    auto number = LocationNP.findWidgetByName("LAT");
+    if(number)
+        return number->getValue();
+    else
+        return 0;
 }
 
 double EQMod::getJulianDate()
@@ -266,19 +264,7 @@ bool EQMod::initProperties()
 
     loadProperties();
 
-    for (int i = 0; i < SlewRateSP.nsp - 1; i++)
-    {
-        SlewRateSP.sp[i].s = ISS_OFF;
-        sprintf(SlewRateSP.sp[i].label, "%.fx", slewspeeds[i]);
-        SlewRateSP.sp[i].aux = (void *)&slewspeeds[i];
-    }
-
-    // Since last item is NOT maximum (but custom), let's set item before custom to SLEWMAX
-    SlewRateSP.sp[SlewRateSP.nsp - 2].s = ISS_ON;
-    strncpy(SlewRateSP.sp[SlewRateSP.nsp - 2].name, "SLEW_MAX", MAXINDINAME);
-    // Last is custom
-    strncpy(SlewRateSP.sp[SlewRateSP.nsp - 1].name, "SLEWCUSTOM", MAXINDINAME);
-    strncpy(SlewRateSP.sp[SlewRateSP.nsp - 1].label, "Custom", MAXINDILABEL);
+    initSlewRates();
 
     AddTrackMode("TRACK_SIDEREAL", "Sidereal", true);
     AddTrackMode("TRACK_SOLAR", "Solar");
@@ -292,7 +278,7 @@ bool EQMod::initProperties()
     InitAlignmentProperties(this);
 
     // Force the alignment system to always be on
-    getSwitch("ALIGNMENT_SUBSYSTEM_ACTIVE")->sp[0].s = ISS_ON;
+    getSwitch("ALIGNMENT_SUBSYSTEM_ACTIVE")[0].setState(ISS_ON);
 #endif
 
     tcpConnection->setDefaultHost("192.168.4.1");
@@ -303,14 +289,32 @@ bool EQMod::initProperties()
     return true;
 }
 
+void EQMod::initSlewRates()
+{
+    for (size_t i = 0; i < SlewRateSP.count() - 1; i++)
+    {
+        SlewRateSP[i].setState(ISS_OFF);
+        SlewRateSP[i].setLabel(std::to_string(slewspeeds[i]) + "x");
+
+        SlewRateSP[i].setAux((void *)&slewspeeds[i]);
+    }
+
+    // Since last item is NOT maximum (but custom), let's set item before custom to SLEWMAX
+    SlewRateSP[SlewRateSP.count() - 2].setState(ISS_ON);
+    SlewRateSP[SlewRateSP.count() - 2].setName("SLEW_MAX");
+    // Last is custom
+    SlewRateSP[SlewRateSP.count() - 1].setName("SLEWCUSTOM");
+    SlewRateSP[SlewRateSP.count() - 1].setLabel("Custom");
+
+}
+
 void EQMod::ISGetProperties(const char *dev)
 {
     INDI::Telescope::ISGetProperties(dev);
 
     if (isConnected())
     {
-        defineProperty(&GuideNSNP);
-        defineProperty(&GuideWENP);
+        GI::updateProperties();
         defineProperty(SlewSpeedsNP);
         defineProperty(GuideRateNP);
         defineProperty(PulseLimitsNP);
@@ -342,10 +346,6 @@ void EQMod::ISGetProperties(const char *dev)
 #if defined WITH_ALIGN || defined WITH_ALIGN_GEEHALEL
         defineProperty(AlignSyncModeSP);
 #endif
-        if (mount->HasHomeIndexers())
-        {
-            defineProperty(AutoHomeSP);
-        }
 
         if (mount->HasAuxEncoders())
         {
@@ -383,7 +383,6 @@ void EQMod::ISGetProperties(const char *dev)
             horizon->ISGetProperties();
         }
 #endif
-
         simulator->updateProperties(isSimulation());
     }
 }
@@ -393,11 +392,11 @@ bool EQMod::loadProperties()
     buildSkeleton("indi_eqmod_sk.xml");
 
     GuideRateNP = getNumber("GUIDE_RATE");
-    GuideRateN  = GuideRateNP->np;
+    // GuideRateN  = GuideRateNP->np;
 
     PulseLimitsNP  = getNumber("PULSE_LIMITS");
-    MinPulseN      = IUFindNumber(PulseLimitsNP, "MIN_PULSE");
-    MinPulseTimerN = IUFindNumber(PulseLimitsNP, "MIN_PULSE_TIMER");
+    MinPulseN      = PulseLimitsNP.findWidgetByName("MIN_PULSE");
+    MinPulseTimerN = PulseLimitsNP.findWidgetByName("MIN_PULSE_TIMER");
 
     MountInformationTP = getText("MOUNTINFORMATION");
     SteppersNP         = getNumber("STEPPERS");
@@ -411,7 +410,7 @@ bool EQMod::loadProperties()
     HemisphereSP       = getSwitch("HEMISPHERE");
     TrackDefaultSP     = getSwitch("TELESCOPE_TRACK_DEFAULT");
     ReverseDECSP       = getSwitch("REVERSEDEC");
-    TargetPierSideSP    = getSwitch("TARGETPIERSIDE");
+    TargetPierSideSP   = getSwitch("TARGETPIERSIDE");
 
     HorizontalCoordNP   = getNumber("HORIZONTAL_COORD");
     StandardSyncNP      = getNumber("STANDARDSYNC");
@@ -420,7 +419,6 @@ bool EQMod::loadProperties()
     SyncManageSP        = getSwitch("SYNCMANAGE");
     BacklashNP          = getNumber("BACKLASH");
     UseBacklashSP       = getSwitch("USEBACKLASH");
-    AutoHomeSP          = getSwitch("AUTOHOME");
     AuxEncoderSP        = getSwitch("AUXENCODER");
     AuxEncoderNP        = getNumber("AUXENCODERVALUES");
     ST4GuideRateNSSP    = getSwitch("ST4_GUIDE_RATE_NS");
@@ -445,7 +443,7 @@ bool EQMod::loadProperties()
 
     simulator->initProperties();
 
-    INDI::GuiderInterface::initGuiderProperties(this->getDeviceName(), MOTION_TAB);
+    GI::initProperties(MOTION_TAB);
 
 #ifdef WITH_SCOPE_LIMITS
     if (horizon)
@@ -460,12 +458,45 @@ bool EQMod::loadProperties()
 
 bool EQMod::updateProperties()
 {
+    // JM 2024.07.29: Need to run this *before* Telescope::updateProperty so we can check if
+    // the mount supports homing since we need to update the telescope capabilities accordingly.
+    if (isConnected())
+    {
+        try
+        {
+            mount->InquireBoardVersion(MountInformationTP);
+
+            for (const auto &it : MountInformationTP)
+            {
+                LOGF_DEBUG("Got Board Property %s: %s", it.getName(), it.getText());
+            }
+
+            mount->InquireRAEncoderInfo(SteppersNP);
+            mount->InquireDEEncoderInfo(SteppersNP);
+
+            for (const auto &it : SteppersNP)
+            {
+                LOGF_DEBUG("Got Encoder Property %s: %.0f", it.getLabel(), it.getValue());
+            }
+
+            mount->InquireFeatures();
+            if (mount->HasHomeIndexers())
+            {
+                LOG_INFO("Mount has home indexers. Enabling Autohome.");
+                SetTelescopeCapability(GetTelescopeCapability() | TELESCOPE_CAN_HOME_FIND, SLEWMODES);
+                initSlewRates();
+            }
+        }
+        catch (EQModError &e)
+        {
+            return (e.DefaultHandleException(this));
+        }
+    }
+
     INDI::Telescope::updateProperties();
 
     if (isConnected())
     {
-        defineProperty(&GuideNSNP);
-        defineProperty(&GuideWENP);
         defineProperty(SlewSpeedsNP);
         defineProperty(GuideRateNP);
         defineProperty(PulseLimitsNP);
@@ -499,26 +530,6 @@ bool EQMod::updateProperties()
 #endif
         try
         {
-            mount->InquireBoardVersion(MountInformationTP);
-
-            for (int i = 0; i < MountInformationTP->ntp; i++)
-                LOGF_DEBUG("Got Board Property %s: %s", MountInformationTP->tp[i].name,
-                           MountInformationTP->tp[i].text);
-
-            mount->InquireRAEncoderInfo(SteppersNP);
-            mount->InquireDEEncoderInfo(SteppersNP);
-
-            for (int i = 0; i < SteppersNP->nnp; i++)
-                LOGF_DEBUG("Got Encoder Property %s: %.0f", SteppersNP->np[i].label,
-                           SteppersNP->np[i].value);
-
-            mount->InquireFeatures();
-            if (mount->HasHomeIndexers())
-            {
-                LOG_INFO("Mount has home indexers. Enabling Autohome.");
-                defineProperty(AutoHomeSP);
-            }
-
             if (mount->HasAuxEncoders())
             {
                 defineProperty(AuxEncoderSP);
@@ -536,17 +547,17 @@ bool EQMod::updateProperties()
                 mount->GetPPECStatus(&intraining, &inppec);
                 if (intraining)
                 {
-                    PPECTrainingSP->sp[0].s = ISS_OFF;
-                    PPECTrainingSP->sp[1].s = ISS_ON;
-                    PPECTrainingSP->s       = IPS_BUSY;
-                    IDSetSwitch(PPECTrainingSP, nullptr);
+                    PPECTrainingSP[0].setState(ISS_OFF);
+                    PPECTrainingSP[1].setState(ISS_ON);
+                    PPECTrainingSP.setState(IPS_BUSY);
+                    PPECTrainingSP.apply();
                 }
                 if (inppec)
                 {
-                    PPECSP->sp[0].s = ISS_OFF;
-                    PPECSP->sp[1].s = ISS_ON;
-                    PPECSP->s       = IPS_BUSY;
-                    IDSetSwitch(PPECSP, nullptr);
+                    PPECSP[0].setState(ISS_OFF);
+                    PPECSP[1].setState(ISS_ON);
+                    PPECSP.setState(IPS_BUSY);
+                    PPECSP.apply();
                 }
             }
 
@@ -556,10 +567,10 @@ bool EQMod::updateProperties()
             }
 
             LOG_DEBUG("Init backlash.");
-            mount->SetBacklashUseRA((IUFindSwitch(UseBacklashSP, "USEBACKLASHRA")->s == ISS_ON ? true : false));
-            mount->SetBacklashUseDE((IUFindSwitch(UseBacklashSP, "USEBACKLASHDE")->s == ISS_ON ? true : false));
-            mount->SetBacklashRA((uint32_t)(IUFindNumber(BacklashNP, "BACKLASHRA")->value));
-            mount->SetBacklashDE((uint32_t)(IUFindNumber(BacklashNP, "BACKLASHDE")->value));
+            mount->SetBacklashUseRA(UseBacklashSP.findWidgetByName("USEBACKLASHRA")->getState() == ISS_ON ? true : false);
+            mount->SetBacklashUseDE(UseBacklashSP.findWidgetByName("USEBACKLASHDE")->getState() == ISS_ON ? true : false);
+            mount->SetBacklashRA((uint32_t)(BacklashNP.findWidgetByName("BACKLASHRA")->getValue()));
+            mount->SetBacklashDE((uint32_t)(BacklashNP.findWidgetByName("BACKLASHDE")->getValue()));
 
             if (mount->HasSnapPort1())
             {
@@ -582,18 +593,11 @@ bool EQMod::updateProperties()
             parkRAEncoder = GetAxis1Park();
             parkDEEncoder = GetAxis2Park();
 
-            INumber *latitude = IUFindNumber(&LocationNP, "LAT");
-            INumber *longitude = IUFindNumber(&LocationNP, "LONG");
-            INumber *elevation = IUFindNumber(&LocationNP, "ELEV");
+            auto latitude = LocationNP.findWidgetByName("LAT");
+            auto longitude = LocationNP.findWidgetByName("LONG");
+            auto elevation = LocationNP.findWidgetByName("ELEV");
             if (latitude && longitude && elevation)
-                updateLocation(latitude->value, longitude->value, elevation->value);
-            //            else
-            //                updateLocation(0.0, 0.0, 0.0);
-
-            //            if ((latitude) && (latitude->value < 0.0))
-            //                SetSouthernHemisphere(true);
-            //            else
-            //                SetSouthernHemisphere(false);
+                updateLocation(latitude->getValue(), longitude->getValue(), elevation->getValue());
 
             sendTimeFromSystem();
         }
@@ -604,63 +608,59 @@ bool EQMod::updateProperties()
     }
     else
     {
-        deleteProperty(GuideNSNP.name);
-        deleteProperty(GuideWENP.name);
-        deleteProperty(GuideRateNP->name);
-        deleteProperty(PulseLimitsNP->name);
-        deleteProperty(MountInformationTP->name);
-        deleteProperty(SteppersNP->name);
-        deleteProperty(CurrentSteppersNP->name);
-        deleteProperty(PeriodsNP->name);
-        deleteProperty(JulianNP->name);
-        deleteProperty(TimeLSTNP->name);
-        deleteProperty(RAStatusLP->name);
-        deleteProperty(DEStatusLP->name);
-        deleteProperty(SlewSpeedsNP->name);
-        deleteProperty(HemisphereSP->name);
-        deleteProperty(HorizontalCoordNP->name);
-        deleteProperty(ReverseDECSP->name);
-        deleteProperty(TargetPierSideSP->name);
-        deleteProperty(StandardSyncNP->name);
-        deleteProperty(StandardSyncPointNP->name);
-        deleteProperty(SyncPolarAlignNP->name);
-        deleteProperty(SyncManageSP->name);
-        deleteProperty(TrackDefaultSP->name);
-        deleteProperty(BacklashNP->name);
-        deleteProperty(UseBacklashSP->name);
-        deleteProperty(ST4GuideRateNSSP->name);
-        deleteProperty(ST4GuideRateWESP->name);
-        deleteProperty(LEDBrightnessNP->name);
+        deleteProperty(GuideRateNP);
+        deleteProperty(PulseLimitsNP);
+        deleteProperty(MountInformationTP);
+        deleteProperty(SteppersNP);
+        deleteProperty(CurrentSteppersNP);
+        deleteProperty(PeriodsNP);
+        deleteProperty(JulianNP);
+        deleteProperty(TimeLSTNP);
+        deleteProperty(RAStatusLP);
+        deleteProperty(DEStatusLP);
+        deleteProperty(SlewSpeedsNP);
+        deleteProperty(HemisphereSP);
+        deleteProperty(HorizontalCoordNP);
+        deleteProperty(ReverseDECSP);
+        deleteProperty(TargetPierSideSP);
+        deleteProperty(StandardSyncNP);
+        deleteProperty(StandardSyncPointNP);
+        deleteProperty(SyncPolarAlignNP);
+        deleteProperty(SyncManageSP);
+        deleteProperty(TrackDefaultSP);
+        deleteProperty(BacklashNP);
+        deleteProperty(UseBacklashSP);
+        deleteProperty(ST4GuideRateNSSP);
+        deleteProperty(ST4GuideRateWESP);
+        deleteProperty(LEDBrightnessNP);
 
-        if (mount->HasHomeIndexers())
-            deleteProperty(AutoHomeSP->name);
         if (mount->HasAuxEncoders())
         {
-            deleteProperty(AuxEncoderSP->name);
-            deleteProperty(AuxEncoderNP->name);
+            deleteProperty(AuxEncoderSP);
+            deleteProperty(AuxEncoderNP);
         }
         if (mount->HasPPEC())
         {
-            deleteProperty(PPECTrainingSP->name);
-            deleteProperty(PPECSP->name);
+            deleteProperty(PPECTrainingSP);
+            deleteProperty(PPECSP);
         }
         if (mount->HasSnapPort1())
         {
-            deleteProperty(SNAPPORT1SP->name);
+            deleteProperty(SNAPPORT1SP);
         }
         if (mount->HasSnapPort2())
         {
-            deleteProperty(SNAPPORT2SP->name);
+            deleteProperty(SNAPPORT2SP);
         }
         if (mount->HasPolarLed())
         {
-            deleteProperty(LEDBrightnessNP->name);
+            deleteProperty(LEDBrightnessNP);
         }
 #if defined WITH_ALIGN && defined WITH_ALIGN_GEEHALEL
         deleteProperty(AlignMethodSP.name);
 #endif
 #if defined WITH_ALIGN || defined WITH_ALIGN_GEEHALEL
-        deleteProperty(AlignSyncModeSP->name);
+        deleteProperty(AlignSyncModeSP);
 #endif
         //MountInformationTP=nullptr;
         //}
@@ -681,6 +681,8 @@ bool EQMod::updateProperties()
     }
 #endif
 
+    GI::updateProperties();
+    mount->setSimulation(isSimulation());
     simulator->updateProperties(isSimulation());
 
     return true;
@@ -778,8 +780,8 @@ void EQMod::TimerHit()
         if (rc == false)
         {
             // read was not good
-            EqNP.s = IPS_ALERT;
-            IDSetNumber(&EqNP, nullptr);
+            EqNP.setState(IPS_ALERT);
+            EqNP.apply();
         }
 
         SetTimer(getCurrentPollingPeriod());
@@ -808,13 +810,13 @@ bool EQMod::ReadScopeStatus()
     hrlst[11] = '\0';
     DEBUGF(DBG_SCOPE_STATUS, "Compute local time: lst=%2.8f (%s) - julian date=%8.8f", lst, hrlst, juliandate);
 
-    IUUpdateNumber(TimeLSTNP, &lst, (char **)(datenames), 1);
-    TimeLSTNP->s = IPS_OK;
-    IDSetNumber(TimeLSTNP, nullptr);
+    TimeLSTNP.update(&lst, (char **)(datenames), 1);
+    TimeLSTNP.setState(IPS_OK);
+    TimeLSTNP.apply();
 
-    IUUpdateNumber(JulianNP, &juliandate, (char **)(datenames + 1), 1);
-    JulianNP->s = IPS_OK;
-    IDSetNumber(JulianNP, nullptr);
+    JulianNP.update(&juliandate, (char **)(datenames + 1), 1);
+    JulianNP.setState(IPS_OK);
+    JulianNP.apply();
 
     try
     {
@@ -824,6 +826,8 @@ bool EQMod::ReadScopeStatus()
         DEBUGF(DBG_SCOPE_STATUS, "Current encoders RA=%ld DE=%ld", static_cast<long>(currentRAEncoder),
                static_cast<long>(currentDEEncoder));
         EncodersToRADec(currentRAEncoder, currentDEEncoder, lst, &currentRA, &currentDEC, &currentHA, &pierSide);
+        if (getPierSide() != pierSide)
+            LOGF_INFO("Pier side changed to %s", getPierSideStr(pierSide));
         setPierSide(pierSide);
 
         alignedRA    = currentRA;
@@ -858,7 +862,7 @@ bool EQMod::ReadScopeStatus()
             DEBUGF(INDI::AlignmentSubsystem::DBG_ALIGNMENT, " Direction RA(deg.)  %lf DEC %lf TDV(x %lf y %lf z %lf)",
                    RaDec.rightascension, RaDec.declination, TDV.x, TDV.y, TDV.z);
             aligned = true;
-            if (!TransformTelescopeToCelestial(TDV, alignedRA, alignedDEC))
+            if (!TransformTelescopeToCelestialJD(TDV, alignedRA, alignedDEC, juliandate))
             {
                 aligned = false;
                 DEBUGF(INDI::AlignmentSubsystem::DBG_ALIGNMENT,
@@ -911,30 +915,30 @@ bool EQMod::ReadScopeStatus()
             INDI::EquatorialToHorizontal(&lnradec, &m_Location, juliandate, &lnaltaz);
             horizvalues[0] = lnaltaz.azimuth;
             horizvalues[1] = lnaltaz.altitude;
-            IUUpdateNumber(HorizontalCoordNP, horizvalues, (char **)horiznames, 2);
-            IDSetNumber(HorizontalCoordNP, nullptr);
+            HorizontalCoordNP.update(horizvalues, (char **)horiznames, 2);
+            HorizontalCoordNP.apply();
         }
 
         steppervalues[0] = currentRAEncoder;
         steppervalues[1] = currentDEEncoder;
-        IUUpdateNumber(CurrentSteppersNP, steppervalues, (char **)steppernames, 2);
-        IDSetNumber(CurrentSteppersNP, nullptr);
+        CurrentSteppersNP.update(steppervalues, (char **)steppernames, 2);
+        CurrentSteppersNP.apply();
 
         mount->GetRAMotorStatus(RAStatusLP);
         mount->GetDEMotorStatus(DEStatusLP);
-        IDSetLight(RAStatusLP, nullptr);
-        IDSetLight(DEStatusLP, nullptr);
+        RAStatusLP.apply();
+        DEStatusLP.apply();
 
         periods[0] = mount->GetRAPeriod();
         periods[1] = mount->GetDEPeriod();
-        IUUpdateNumber(PeriodsNP, periods, (char **)periodsnames, 2);
-        IDSetNumber(PeriodsNP, nullptr);
+        PeriodsNP.update(periods, (char **)periodsnames, 2);
+        PeriodsNP.apply();
 
         // Log all coords
         {
             char CurrentRAString[64] = {0}, CurrentDEString[64] = {0},
                                        AlignedRAString[64] = {0}, AlignedDEString[64] = {0},
-                                               AZString[64] = {0}, ALString[64] = {0};
+                                           AZString[64] = {0}, ALString[64] = {0};
             fs_sexa(CurrentRAString, currentRA, 2, 3600);
             fs_sexa(CurrentDEString, currentDEC, 2, 3600);
             fs_sexa(AlignedRAString, alignedRA, 2, 3600);
@@ -958,8 +962,8 @@ bool EQMod::ReadScopeStatus()
             const char *auxencodernames[] = { "AUXENCRASteps", "AUXENCDESteps" };
             auxencodervalues[0]           = mount->GetRAAuxEncoder();
             auxencodervalues[1]           = mount->GetDEAuxEncoder();
-            IUUpdateNumber(AuxEncoderNP, auxencodervalues, (char **)auxencodernames, 2);
-            IDSetNumber(AuxEncoderNP, nullptr);
+            AuxEncoderNP.update(auxencodervalues, (char **)auxencodernames, 2);
+            AuxEncoderNP.apply();
         }
 
         if (gotoInProgress())
@@ -991,8 +995,6 @@ bool EQMod::ReadScopeStatus()
                 }
                 else
                 {
-                    ISwitch *sw;
-                    sw = IUFindSwitch(&CoordSP, "TRACK");
                     if ((gotoparams.iterative_count > GOTO_ITERATIVE_LIMIT) &&
                             (((3600 * fabs(gotoparams.ratarget - currentRA)) > RAGOTORESOLUTION) ||
                              ((3600 * fabs(gotoparams.detarget - currentDEC)) > DEGOTORESOLUTION)))
@@ -1007,21 +1009,19 @@ bool EQMod::ReadScopeStatus()
                     // For AstroEQ (needs an explicit :G command at the end of gotos)
                     mount->ResetMotions();
 
-                    if ((RememberTrackState == SCOPE_TRACKING) || ((sw != nullptr) && (sw->s == ISS_ON)))
+                    if ((RememberTrackState == SCOPE_TRACKING) || CoordSP.isSwitchOn("TRACK"))
                     {
-                        char *name;
+                        std::string name;
 
                         if (RememberTrackState == SCOPE_TRACKING)
                         {
-                            sw   = IUFindOnSwitch(&TrackModeSP);
-                            name = sw->name;
+                            name = TrackModeSP.findOnSwitchName();;
                             mount->StartRATracking(GetRATrackRate());
                             mount->StartDETracking(GetDETrackRate());
                         }
                         else
                         {
-                            sw    = IUFindOnSwitch(TrackDefaultSP);
-                            name  = sw->name;
+                            name = TrackDefaultSP.findOnSwitchName();
                             mount->StartRATracking(GetDefaultRATrackRate());
                             mount->StartDETracking(GetDefaultDETrackRate());
 
@@ -1040,7 +1040,7 @@ bool EQMod::ReadScopeStatus()
                         TrackModeSP->s = IPS_BUSY;
                         IDSetSwitch(TrackModeSP, nullptr);
 #endif
-                        LOGF_INFO("Telescope slew is complete. Tracking %s...", name);
+                        LOGF_INFO("Telescope slew is complete. Tracking %s...", name.c_str());
                     }
                     else
                     {
@@ -1049,7 +1049,6 @@ bool EQMod::ReadScopeStatus()
                         LOG_INFO("Telescope slew is complete. Stopping...");
                     }
                     gotoparams.completed = true;
-                    //EqNP.s               = IPS_OK;
                 }
             }
         }
@@ -1066,35 +1065,41 @@ bool EQMod::ReadScopeStatus()
         {
             if (!(mount->IsRARunning()) && !(mount->IsDERunning()))
             {
-                SetParked(true);
+                currentRAEncoder = mount->GetRAEncoder();
+                currentDEEncoder = mount->GetDEEncoder();
+                parkRAEncoder    = GetAxis1Park();
+                parkDEEncoder    = GetAxis2Park();
+                if (std::abs(static_cast<int32_t>(parkRAEncoder - currentRAEncoder)) > PARKING_THRESHOLD )
+                {
+                    // Start slewing
+                    LOGF_INFO("Motors while parking stopped, reparking mount: RA increment = %d, DE increment = %d",
+                              static_cast<int32_t>(parkRAEncoder - currentRAEncoder), static_cast<int32_t>(parkDEEncoder - currentDEEncoder));
+                    mount->SlewTo(static_cast<int32_t>(parkRAEncoder - currentRAEncoder),
+                                  static_cast<int32_t>(parkDEEncoder - currentDEEncoder));
+
+                    TrackState = SCOPE_PARKING;
+                }
+                else
+                {
+                    SetParked(true);
+                }
             }
         }
 
         if (mount->HasPPEC())
         {
-            if (PPECTrainingSP->s == IPS_BUSY)
+            if (PPECTrainingSP.getState() == IPS_BUSY)
             {
                 bool intraining, inppec;
                 mount->GetPPECStatus(&intraining, &inppec);
                 if (!(intraining))
                 {
                     LOG_INFO("PPEC Training completed.");
-                    PPECTrainingSP->sp[0].s = ISS_ON;
-                    PPECTrainingSP->sp[1].s = ISS_OFF;
-                    PPECTrainingSP->s       = IPS_IDLE;
-                    IDSetSwitch(PPECTrainingSP, nullptr);
+                    PPECTrainingSP[0].setState(ISS_ON);
+                    PPECTrainingSP[1].setState(ISS_OFF);
+                    PPECTrainingSP.setState(IPS_IDLE);
+                    PPECTrainingSP.apply();
                 }
-            }
-        }
-
-        if (AutohomeState == AUTO_HOME_CONFIRM)
-        {
-            if (ah_confirm_timeout > 0)
-                ah_confirm_timeout -= 1;
-            if (ah_confirm_timeout == 0)
-            {
-                AutohomeState = AUTO_HOME_IDLE;
-                LOG_INFO("Autohome confirm timeout.");
             }
         }
 
@@ -1106,7 +1111,6 @@ bool EQMod::ReadScopeStatus()
             switch (AutohomeState)
             {
                 case AUTO_HOME_IDLE:
-                case AUTO_HOME_CONFIRM:
                     AutohomeState = AUTO_HOME_IDLE;
                     TrackState    = SCOPE_IDLE;
                     RememberTrackState = TrackState;
@@ -1394,9 +1398,9 @@ bool EQMod::ReadScopeStatus()
                         TrackState    = SCOPE_IDLE;
                         RememberTrackState = TrackState;
                         AutohomeState = AUTO_HOME_IDLE;
-                        AutoHomeSP->s = IPS_IDLE;
-                        IUResetSwitch(AutoHomeSP);
-                        IDSetSwitch(AutoHomeSP, nullptr);
+                        HomeSP.setState(IPS_IDLE);
+                        HomeSP.reset();
+                        HomeSP.apply();
                         LOG_INFO("Autohome: end");
                     }
                     else
@@ -1567,22 +1571,22 @@ void EQMod::SetSouthernHemisphere(bool southern)
     {
         hemispherevalues[0] = ISS_ON;
         hemispherevalues[1] = ISS_OFF;
-        IUUpdateSwitch(HemisphereSP, hemispherevalues, (char **)hemispherenames, 2);
+        HemisphereSP.update(hemispherevalues, (char **)hemispherenames, 2);
     }
     else
     {
         hemispherevalues[0] = ISS_OFF;
         hemispherevalues[1] = ISS_ON;
-        IUUpdateSwitch(HemisphereSP, hemispherevalues, (char **)hemispherenames, 2);
+        HemisphereSP.update(hemispherevalues, (char **)hemispherenames, 2);
     }
-    HemisphereSP->s = IPS_IDLE;
-    IDSetSwitch(HemisphereSP, nullptr);
+    HemisphereSP.setState(IPS_IDLE);
+    HemisphereSP.apply();
 }
 
 void EQMod::UpdateDEInverted()
 {
     bool prev = DEInverted;
-    DEInverted = (Hemisphere == SOUTH) ^ (ReverseDECSP->sp[0].s == ISS_ON);
+    DEInverted = (Hemisphere == SOUTH) ^ (ReverseDECSP[0].getState() == ISS_ON);
     if (DEInverted != prev)
         LOGF_DEBUG("Set DEInverted %s", DEInverted ? "true" : "false");
 }
@@ -1643,7 +1647,7 @@ double EQMod::GetRATrackRate()
 {
     double rate = 0.0;
     ISwitch *sw;
-    sw = IUFindOnSwitch(&TrackModeSP);
+    sw = TrackModeSP.findOnSwitch();
     if (!sw)
         return 0.0;
     if (!strcmp(sw->name, "TRACK_SIDEREAL"))
@@ -1660,7 +1664,9 @@ double EQMod::GetRATrackRate()
     }
     else if (!strcmp(sw->name, "TRACK_CUSTOM"))
     {
-        rate = IUFindNumber(&TrackRateNP, "TRACK_RATE_RA")->value;
+        auto number = TrackRateNP.findWidgetByName("TRACK_RATE_RA");
+        if(number)
+            rate = number->getValue();
     }
     else
         return 0.0;
@@ -1673,7 +1679,7 @@ double EQMod::GetDETrackRate()
 {
     double rate = 0.0;
     ISwitch *sw;
-    sw = IUFindOnSwitch(&TrackModeSP);
+    sw = TrackModeSP.findOnSwitch();
     if (!sw)
         return 0.0;
     if (!strcmp(sw->name, "TRACK_SIDEREAL"))
@@ -1690,7 +1696,9 @@ double EQMod::GetDETrackRate()
     }
     else if (!strcmp(sw->name, "TRACK_CUSTOM"))
     {
-        rate = IUFindNumber(&TrackRateNP, "TRACK_RATE_DE")->value;
+        auto number = TrackRateNP.findWidgetByName("TRACK_RATE_DE");
+        if(number)
+            rate = number->getValue();
     }
     else
         return 0.0;
@@ -1702,25 +1710,26 @@ double EQMod::GetDETrackRate()
 double EQMod::GetDefaultRATrackRate()
 {
     double rate = 0.0;
-    ISwitch *sw;
-    sw = IUFindOnSwitch(TrackDefaultSP);
-    if (!sw)
+    auto element = TrackDefaultSP.findOnSwitch();
+    if (!element)
         return 0.0;
-    if (!strcmp(sw->name, "TRACK_SIDEREAL"))
+    if (element->isNameMatch("TRACK_SIDEREAL"))
     {
         rate = TRACKRATE_SIDEREAL;
     }
-    else if (!strcmp(sw->name, "TRACK_LUNAR"))
+    else if (element->isNameMatch("TRACK_LUNAR"))
     {
         rate = TRACKRATE_LUNAR;
     }
-    else if (!strcmp(sw->name, "TRACK_SOLAR"))
+    else if (element->isNameMatch("TRACK_SOLAR"))
     {
         rate = TRACKRATE_SOLAR;
     }
-    else if (!strcmp(sw->name, "TRACK_CUSTOM"))
+    else if (element->isNameMatch("TRACK_CUSTOM"))
     {
-        rate = IUFindNumber(&TrackRateNP, "TRACK_RATE_RA")->value;
+        auto number = TrackRateNP.findWidgetByName("TRACK_RATE_RA");
+        if(number)
+            rate = number->getValue();
     }
     else
         return 0.0;
@@ -1733,7 +1742,7 @@ double EQMod::GetDefaultDETrackRate()
 {
     double rate = 0.0;
     ISwitch *sw;
-    sw = IUFindOnSwitch(TrackDefaultSP);
+    sw = TrackDefaultSP.findOnSwitch();
     if (!sw)
         return 0.0;
     if (!strcmp(sw->name, "TRACK_SIDEREAL"))
@@ -1750,7 +1759,9 @@ double EQMod::GetDefaultDETrackRate()
     }
     else if (!strcmp(sw->name, "TRACK_CUSTOM"))
     {
-        rate = IUFindNumber(&TrackRateNP, "TRACK_RATE_DE")->value;
+        auto number = TrackRateNP.findWidgetByName("TRACK_RATE_DE");
+        if(number)
+            rate = number->getValue();
     }
     else
         return 0.0;
@@ -1844,7 +1855,7 @@ bool EQMod::Goto(double r, double d)
     {
         TelescopeDirectionVector TDV;
         aligned = true;
-        if (!TransformCelestialToTelescope(r, d, 0.0, TDV))
+        if (!TransformCelestialToTelescopeJD(r, d, ln_get_julian_from_sys(), TDV))
         {
             DEBUGF(INDI::AlignmentSubsystem::DBG_ALIGNMENT,
                    "Failed TransformCelestialToTelescope:  RA=%lf DE=%lf, Goto RA=%lf DE=%lf", r, d, gotoparams.ratarget,
@@ -1971,8 +1982,8 @@ bool EQMod::Park()
         if (TrackState == SCOPE_SLEWING)
         {
             LOG_INFO("Can not park while slewing...");
-            ParkSP.s = IPS_ALERT;
-            IDSetSwitch(&ParkSP, nullptr);
+            ParkSP.setState(IPS_ALERT);
+            ParkSP.apply();
             return false;
         }
 
@@ -2124,25 +2135,26 @@ bool EQMod::Sync(double ra, double dec)
         syncdata2 = syncdata;
         syncdata  = tmpsyncdata;
 
-        IUFindNumber(StandardSyncNP, "STANDARDSYNC_RA")->value = syncdata.deltaRA;
-        IUFindNumber(StandardSyncNP, "STANDARDSYNC_DE")->value = syncdata.deltaDEC;
-        IDSetNumber(StandardSyncNP, nullptr);
-        IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_JD")->value           = juliandate;
-        IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_SYNCTIME")->value     = lst;
-        IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_CELESTIAL_RA")->value = syncdata.targetRA;
-        IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_CELESTIAL_DE")->value = syncdata.targetDEC;
-        IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_TELESCOPE_RA")->value = syncdata.telescopeRA;
-        IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_TELESCOPE_DE")->value = syncdata.telescopeDEC;
-        IDSetNumber(StandardSyncPointNP, nullptr);
+        StandardSyncNP.findWidgetByName("STANDARDSYNC_RA")->setValue(syncdata.deltaRA);
+        StandardSyncNP.findWidgetByName("STANDARDSYNC_DE")->setValue(syncdata.deltaDEC);
+        StandardSyncNP.apply();
+
+        StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_JD")->setValue(juliandate);
+        StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_SYNCTIME")->setValue(lst);
+        StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_CELESTIAL_RA")->setValue(syncdata.targetRA);
+        StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_CELESTIAL_DE")->setValue(syncdata.targetDEC);
+        StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_TELESCOPE_RA")->setValue(syncdata.telescopeRA);
+        StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_TELESCOPE_DE")->setValue(syncdata.telescopeDEC);
+        StandardSyncPointNP.apply();
 
         LOGF_INFO("Mount Synced (deltaRA = %.6f deltaDEC = %.6f)", syncdata.deltaRA, syncdata.deltaDEC);
         if (syncdata2.lst != 0.0)
         {
             computePolarAlign(syncdata2, syncdata, getLatitude(), &tpa_alt, &tpa_az);
-            IUFindNumber(SyncPolarAlignNP, "SYNCPOLARALIGN_ALT")->value = tpa_alt;
-            IUFindNumber(SyncPolarAlignNP, "SYNCPOLARALIGN_AZ")->value  = tpa_az;
-            IDSetNumber(SyncPolarAlignNP, nullptr);
-            IDLog("computePolarAlign: Telescope Polar Axis: alt = %g, az = %g\n", tpa_alt, tpa_az);
+            SyncPolarAlignNP.findWidgetByName("SYNCPOLARALIGN_ALT")->setValue(tpa_alt);
+            SyncPolarAlignNP.findWidgetByName("SYNCPOLARALIGN_AZ")->setValue(tpa_az);
+            SyncPolarAlignNP.apply();
+            LOGF_DEBUG("computePolarAlign: Telescope Polar Axis: alt = %g, az = %g", tpa_alt, tpa_az);
         }
     }
     return true;
@@ -2155,7 +2167,7 @@ IPState EQMod::GuideNorth(uint32_t ms)
         return IPS_IDLE;
     }
 
-    double rateshift = TRACKRATE_SIDEREAL * IUFindNumber(GuideRateNP, "GUIDE_RATE_NS")->value;
+    double rateshift = TRACKRATE_SIDEREAL * GuideRateNP.findWidgetByName("GUIDE_RATE_NS")->getValue();
     LOGF_DEBUG("Timed guide North %d ms at rate %g %s", ms, rateshift, DEInverted ? "(Inverted)" : "");
 
     IPState pulseState = IPS_BUSY;
@@ -2219,7 +2231,7 @@ IPState EQMod::GuideSouth(uint32_t ms)
     }
 
     double rateshift = 0.0;
-    rateshift        = TRACKRATE_SIDEREAL * IUFindNumber(GuideRateNP, "GUIDE_RATE_NS")->value;
+    rateshift        = TRACKRATE_SIDEREAL * GuideRateNP.findWidgetByName("GUIDE_RATE_NS")->getValue();
     LOGF_DEBUG("Timed guide South %d ms at rate %g %s", ms, rateshift, DEInverted ? "(Inverted)" : "");
 
     IPState pulseState = IPS_BUSY;
@@ -2282,7 +2294,7 @@ IPState EQMod::GuideEast(uint32_t ms)
     }
 
     double rateshift = 0.0;
-    rateshift        = TRACKRATE_SIDEREAL * IUFindNumber(GuideRateNP, "GUIDE_RATE_WE")->value;
+    rateshift        = TRACKRATE_SIDEREAL * GuideRateNP.findWidgetByName("GUIDE_RATE_WE")->getValue();
     LOGF_DEBUG("Timed guide East %d ms at rate %g %s", ms, rateshift, RAInverted ? "(Inverted)" : "");
 
     IPState pulseState = IPS_BUSY;
@@ -2294,7 +2306,7 @@ IPState EQMod::GuideEast(uint32_t ms)
         if (mount->HasPPEC())
         {
             restartguidePPEC = false;
-            if (PPECSP->s == IPS_BUSY)
+            if (PPECSP.getState() == IPS_BUSY)
             {
                 restartguidePPEC = true;
                 LOG_INFO("Turning PPEC off while guiding.");
@@ -2365,7 +2377,7 @@ IPState EQMod::GuideWest(uint32_t ms)
     }
 
     double rateshift = 0.0;
-    rateshift        = TRACKRATE_SIDEREAL * IUFindNumber(GuideRateNP, "GUIDE_RATE_WE")->value;
+    rateshift        = TRACKRATE_SIDEREAL * GuideRateNP.findWidgetByName("GUIDE_RATE_WE")->getValue();
     LOGF_DEBUG("Timed guide West %d ms at rate %g %s", ms, rateshift, RAInverted ? "(Inverted)" : "");
 
     IPState pulseState = IPS_BUSY;
@@ -2377,7 +2389,7 @@ IPState EQMod::GuideWest(uint32_t ms)
         if (mount->HasPPEC())
         {
             restartguidePPEC = false;
-            if (PPECSP->s == IPS_BUSY)
+            if (PPECSP.getState() == IPS_BUSY)
             {
                 restartguidePPEC = true;
                 LOG_INFO("Turning PPEC off while guiding.");
@@ -2451,66 +2463,52 @@ bool EQMod::ISNewNumber(const char *dev, const char *name, double values[], char
 
         if (strcmp(name, "SLEWSPEEDS") == 0)
         {
-            /* TODO: don't change speed in gotos gotoparams.inprogress... */
-            if (TrackState != SCOPE_TRACKING)
-            {
-                try
-                {
-                    for (int i = 0; i < n; i++)
-                    {
-                        if (strcmp(names[i], "RASLEW") == 0)
-                            mount->SetRARate(values[i]);
-                        else if (strcmp(names[i], "DESLEW") == 0)
-                            mount->SetDERate(values[i]);
-                    }
-                }
-                catch (EQModError e)
-                {
-                    return (e.DefaultHandleException(this));
-                }
-            }
-            IUUpdateNumber(SlewSpeedsNP, values, names, n);
-            SlewSpeedsNP->s = IPS_OK;
-            IDSetNumber(SlewSpeedsNP, nullptr);
+            // Just store the requested custom slew speeds. The actual speeds are
+            // read from SlewSpeedsNP at slew time (GetRASlew/GetDESlew), so there
+            // is no need to command the motors here. Sending SetRARate/SetDERate
+            // would issue a "Set Motion Mode" command that starts the motors,
+            // which is dangerous when this handler runs during configuration load.
+            SlewSpeedsNP.update(values, names, n);
+            SlewSpeedsNP.setState(IPS_OK);
+            SlewSpeedsNP.apply();
             LOGF_INFO("Setting Slew rates - RA=%.2fx DE=%.2fx",
-                      IUFindNumber(SlewSpeedsNP, "RASLEW")->value, IUFindNumber(SlewSpeedsNP, "DESLEW")->value);
+                      SlewSpeedsNP.findWidgetByName("RASLEW")->getValue(), SlewSpeedsNP.findWidgetByName("DESLEW")->getValue());
             return true;
         }
 
         // Guider interface
-        if (!strcmp(name, GuideNSNP.name) || !strcmp(name, GuideWENP.name))
+        if (GuideNSNP.isNameMatch(name) || GuideWENP.isNameMatch(name))
         {
             // Unless we're in track mode, we don't obey guide commands.
             if (TrackState != SCOPE_TRACKING)
             {
-                GuideNSNP.s = IPS_IDLE;
-                IDSetNumber(&GuideNSNP, nullptr);
-                GuideWENP.s = IPS_IDLE;
-                IDSetNumber(&GuideWENP, nullptr);
+                GuideNSNP.setState(IPS_IDLE);
+                GuideNSNP.apply();;
+                GuideWENP.setState(IPS_IDLE);
+                GuideWENP.apply();
                 LOG_WARN("Can not guide if not tracking.");
                 return true;
             }
 
-            processGuiderProperties(name, values, names, n);
-
-            return true;
+            return GI::processNumber(dev, name, values, names, n);
         }
-        if (strcmp(name, GuideRateNP->name) == 0)
+        if (GuideRateNP.isNameMatch(name))
         {
-            IUUpdateNumber(GuideRateNP, values, names, n);
-            GuideRateNP->s = IPS_OK;
-            IDSetNumber(GuideRateNP, nullptr);
+            GuideRateNP.update(values, names, n);
+            GuideRateNP.setState(IPS_OK);
+            GuideRateNP.apply();
+            saveConfig(GuideRateNP);
             LOGF_INFO("Setting Custom Tracking Rates - RA=%1.1f arcsec/s DE=%1.1f arcsec/s",
-                      IUFindNumber(GuideRateNP, "GUIDE_RATE_WE")->value,
-                      IUFindNumber(GuideRateNP, "GUIDE_RATE_NS")->value);
+                      GuideRateNP.findWidgetByName("GUIDE_RATE_WE")->getValue(),
+                      GuideRateNP.findWidgetByName("GUIDE_RATE_NS")->getValue());
             return true;
         }
 
-        if (strcmp(name, PulseLimitsNP->name) == 0)
+        if (PulseLimitsNP.isNameMatch(name))
         {
-            IUUpdateNumber(PulseLimitsNP, values, names, n);
-            PulseLimitsNP->s = IPS_OK;
-            IDSetNumber(PulseLimitsNP, nullptr);
+            PulseLimitsNP.update(values, names, n);
+            PulseLimitsNP.setState(IPS_OK);
+            PulseLimitsNP.apply();
             LOGF_INFO("Setting pulse limits: minimum pulse %3.0f ms, minimum timer pulse %4.0f ms", MinPulseN->value,
                       MinPulseTimerN->value);
             return true;
@@ -2518,13 +2516,13 @@ bool EQMod::ISNewNumber(const char *dev, const char *name, double values[], char
 
         if (strcmp(name, "BACKLASH") == 0)
         {
-            IUUpdateNumber(BacklashNP, values, names, n);
-            BacklashNP->s = IPS_OK;
-            IDSetNumber(BacklashNP, nullptr);
-            mount->SetBacklashRA((uint32_t)(IUFindNumber(BacklashNP, "BACKLASHRA")->value));
-            mount->SetBacklashDE((uint32_t)(IUFindNumber(BacklashNP, "BACKLASHDE")->value));
+            BacklashNP.update(values, names, n);
+            BacklashNP.setState(IPS_OK);
+            BacklashNP.apply();
+            mount->SetBacklashRA((uint32_t)(BacklashNP.findWidgetByName("BACKLASHRA")->getValue()));
+            mount->SetBacklashDE((uint32_t)(BacklashNP.findWidgetByName("BACKLASHDE")->getValue()));
             LOGF_INFO("Setting Backlash compensation - RA=%.0f microsteps DE=%.0f microsteps",
-                      IUFindNumber(BacklashNP, "BACKLASHRA")->value, IUFindNumber(BacklashNP, "BACKLASHDE")->value);
+                      BacklashNP.findWidgetByName("BACKLASHRA")->getValue(), BacklashNP.findWidgetByName("BACKLASHDE")->getValue());
             return true;
         }
 
@@ -2532,9 +2530,10 @@ bool EQMod::ISNewNumber(const char *dev, const char *name, double values[], char
         {
             if (strcmp(name, "LED_BRIGHTNESS") == 0)
             {
-                IUUpdateNumber(LEDBrightnessNP, values, names, n);
-                LEDBrightnessNP->s = IPS_OK;
-                IDSetNumber(LEDBrightnessNP, nullptr);
+                LEDBrightnessNP.update(values, names, n);
+                LEDBrightnessNP.setState(IPS_OK);
+                LEDBrightnessNP.apply();
+                saveConfig(LEDBrightnessNP);
                 mount->SetLEDBrightness(static_cast<uint8_t>(values[0]));
                 LOGF_INFO("Setting LED brightness to %.f", values[0]);
                 return true;
@@ -2545,21 +2544,22 @@ bool EQMod::ISNewNumber(const char *dev, const char *name, double values[], char
         {
             syncdata2 = syncdata;
             bzero(&syncdata, sizeof(syncdata));
-            IUUpdateNumber(StandardSyncPointNP, values, names, n);
-            StandardSyncPointNP->s = IPS_OK;
+            StandardSyncPointNP.update(values, names, n);
+            StandardSyncPointNP.setState(IPS_OK);
 
-            syncdata.jd           = IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_JD")->value;
-            syncdata.lst          = IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_SYNCTIME")->value;
-            syncdata.targetRA     = IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_CELESTIAL_RA")->value;
-            syncdata.targetDEC    = IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_CELESTIAL_DE")->value;
-            syncdata.telescopeRA  = IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_TELESCOPE_RA")->value;
-            syncdata.telescopeDEC = IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_TELESCOPE_DE")->value;
+            syncdata.jd           = StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_JD")->getValue();
+            syncdata.lst          = StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_SYNCTIME")->getValue();
+            syncdata.targetRA     = StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_CELESTIAL_RA")->getValue();
+            syncdata.targetDEC    = StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_CELESTIAL_DE")->getValue();
+            syncdata.telescopeRA  = StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_TELESCOPE_RA")->getValue();
+            syncdata.telescopeDEC = StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_TELESCOPE_DE")->getValue();
             syncdata.deltaRA      = syncdata.targetRA - syncdata.telescopeRA;
             syncdata.deltaDEC     = syncdata.targetDEC - syncdata.telescopeDEC;
-            IDSetNumber(StandardSyncPointNP, nullptr);
-            IUFindNumber(StandardSyncNP, "STANDARDSYNC_RA")->value = syncdata.deltaRA;
-            IUFindNumber(StandardSyncNP, "STANDARDSYNC_DE")->value = syncdata.deltaDEC;
-            IDSetNumber(StandardSyncNP, nullptr);
+            StandardSyncPointNP.apply();
+
+            StandardSyncNP.findWidgetByName("STANDARDSYNC_RA")->setValue(syncdata.deltaRA);
+            StandardSyncNP.findWidgetByName("STANDARDSYNC_DE")->setValue(syncdata.deltaDEC);
+            StandardSyncNP.apply();
 
             LOGF_INFO("Mount manually Synced (deltaRA = %.6f deltaDEC = %.6f)",
                       syncdata.deltaRA, syncdata.deltaDEC);
@@ -2567,9 +2567,9 @@ bool EQMod::ISNewNumber(const char *dev, const char *name, double values[], char
             if (syncdata2.lst != 0.0)
             {
                 computePolarAlign(syncdata2, syncdata, getLatitude(), &tpa_alt, &tpa_az);
-                IUFindNumber(SyncPolarAlignNP, "SYNCPOLARALIGN_ALT")->value = tpa_alt;
-                IUFindNumber(SyncPolarAlignNP, "SYNCPOLARALIGN_AZ")->value  = tpa_az;
-                IDSetNumber(SyncPolarAlignNP, nullptr);
+                SyncPolarAlignNP.findWidgetByName("SYNCPOLARALIGN_ALT")->setValue(tpa_alt);
+                SyncPolarAlignNP.findWidgetByName("SYNCPOLARALIGN_AZ")->setValue(tpa_az);
+                SyncPolarAlignNP.apply();
                 IDLog("computePolarAlign: Telescope Polar Axis: alt = %g, az = %g\n", tpa_alt, tpa_az);
             }
 
@@ -2617,10 +2617,10 @@ bool EQMod::ISNewSwitch(const char *dev, const char *name, ISState *states, char
     {
         if (!strcmp(name, "SIMULATION"))
         {
-            ISwitchVectorProperty *svp = getSwitch(name);
+            auto svp = getSwitch(name);
+            svp.update(states, names, n);
 
-            IUUpdateSwitch(svp, states, names, n);
-            ISwitch *sp = IUFindOnSwitch(svp);
+            auto sp = svp.findOnSwitch();
             if (!sp)
                 return false;
 
@@ -2628,296 +2628,193 @@ bool EQMod::ISNewSwitch(const char *dev, const char *name, ISState *states, char
             {
                 DEBUG(INDI::Logger::DBG_WARNING,
                       "Mount must be disconnected before you can change simulation settings.");
-                svp->s = IPS_ALERT;
-                IDSetSwitch(svp, nullptr);
+                svp.setState(IPS_ALERT);
+                svp.apply();
                 return false;
             }
 
-            if (!strcmp(sp->name, "ENABLE"))
-                setStepperSimulation(true);
-            else
-                setStepperSimulation(false);
+            setStepperSimulation(sp->isNameMatch("ENABLE"));
             return true;
         }
 
         if (strcmp(name, "USEBACKLASH") == 0)
         {
-            IUUpdateSwitch(UseBacklashSP, states, names, n);
-            mount->SetBacklashUseRA((IUFindSwitch(UseBacklashSP, "USEBACKLASHRA")->s == ISS_ON ? true : false));
-            mount->SetBacklashUseDE((IUFindSwitch(UseBacklashSP, "USEBACKLASHDE")->s == ISS_ON ? true : false));
+            UseBacklashSP.update(states, names, n);
+            mount->SetBacklashUseRA(UseBacklashSP.findWidgetByName("USEBACKLASHRA")->getState() == ISS_ON ? true : false);
+            mount->SetBacklashUseDE(UseBacklashSP.findWidgetByName("USEBACKLASHDE")->getState() == ISS_ON ? true : false);
             LOGF_INFO("Use Backlash :  RA: %s, DE: %s",
-                      IUFindSwitch(UseBacklashSP, "USEBACKLASHRA")->s == ISS_ON ? "True" : "False",
-                      IUFindSwitch(UseBacklashSP, "USEBACKLASHDE")->s == ISS_ON ? "True" : "False");
-            UseBacklashSP->s = IPS_IDLE;
-            IDSetSwitch(UseBacklashSP, nullptr);
+                      UseBacklashSP.findWidgetByName("USEBACKLASHRA")->getState() == ISS_ON ? "True" : "False",
+                      UseBacklashSP.findWidgetByName("USEBACKLASHDE")->getState() == ISS_ON ? "True" : "False");
+            UseBacklashSP.setState(IPS_IDLE);
+            UseBacklashSP.apply();
             return true;
         }
 
         if (strcmp(name, "TRACKDEFAULT") == 0)
         {
-            ISwitch *swbefore, *swafter;
-            swbefore = IUFindOnSwitch(TrackDefaultSP);
-            IUUpdateSwitch(TrackDefaultSP, states, names, n);
-            swafter = IUFindOnSwitch(TrackDefaultSP);
+            auto swbefore = TrackDefaultSP.findOnSwitch();
+            TrackDefaultSP.update(states, names, n);
+            auto swafter = TrackDefaultSP.findOnSwitch();
             if (swbefore != swafter)
             {
-                TrackDefaultSP->s = IPS_IDLE;
-                IDSetSwitch(TrackDefaultSP, nullptr);
-                LOGF_INFO("Changed Track Default (from %s to %s).", swbefore->name,
-                          swafter->name);
+                TrackDefaultSP.setState(IPS_IDLE);
+                TrackDefaultSP.apply();
+                LOGF_INFO("Changed Track Default (from %s to %s).", swbefore->getName(),
+                          swafter->getName());
             }
             return true;
         }
 
         if (strcmp(name, "ST4_GUIDE_RATE_WE") == 0)
         {
-            ISwitch *swbefore, *swafter;
-            swbefore = IUFindOnSwitch(ST4GuideRateWESP);
-            IUUpdateSwitch(ST4GuideRateWESP, states, names, n);
-            swafter = IUFindOnSwitch(ST4GuideRateWESP);
+            auto swbefore = ST4GuideRateWESP.findOnSwitch();
+            ST4GuideRateWESP.update(states, names, n);
+            auto swafter = ST4GuideRateWESP.findOnSwitch();
             if (swbefore != swafter)
             {
-                unsigned char rate = '0' + (unsigned char)IUFindOnSwitchIndex(ST4GuideRateWESP);
+                unsigned char rate = '0' + (unsigned char)ST4GuideRateWESP.findOnSwitchIndex();
                 mount->SetST4RAGuideRate(rate);
-                ST4GuideRateWESP->s = IPS_IDLE;
-                IDSetSwitch(ST4GuideRateWESP, nullptr);
-                LOGF_INFO("Changed ST4 Guide rate WE (from %s to %s).", swbefore->label,
-                          swafter->label);
+                ST4GuideRateWESP.setState(IPS_IDLE);
+                ST4GuideRateWESP.apply();
+                LOGF_INFO("Changed ST4 Guide rate WE (from %s to %s).", swbefore->getLabel(),
+                          swafter->getLabel());
             }
             return true;
         }
 
         if (strcmp(name, "ST4_GUIDE_RATE_NS") == 0)
         {
-            ISwitch *swbefore, *swafter;
-            swbefore = IUFindOnSwitch(ST4GuideRateNSSP);
-            IUUpdateSwitch(ST4GuideRateNSSP, states, names, n);
-            swafter = IUFindOnSwitch(ST4GuideRateNSSP);
+            auto swbefore = ST4GuideRateNSSP.findOnSwitch();
+            ST4GuideRateNSSP.update(states, names, n);
+            auto swafter = ST4GuideRateNSSP.findOnSwitch();
+
             if (swbefore != swafter)
             {
-                unsigned char rate = '0' + (unsigned char)IUFindOnSwitchIndex(ST4GuideRateNSSP);
+                unsigned char rate = '0' + (unsigned char)ST4GuideRateNSSP.findOnSwitchIndex();
                 mount->SetST4DEGuideRate(rate);
-                ST4GuideRateNSSP->s = IPS_IDLE;
-                IDSetSwitch(ST4GuideRateNSSP, nullptr);
-                LOGF_INFO("Changed ST4 Guide rate NS (from %s to %s).", swbefore->label,
-                          swafter->label);
+                ST4GuideRateNSSP.setState(IPS_IDLE);
+                ST4GuideRateNSSP.apply();
+                LOGF_INFO("Changed ST4 Guide rate NS (from %s to %s).", swbefore->getLabel(),
+                          swafter->getLabel());
             }
             return true;
         }
 
         if (!strcmp(name, "SYNCMANAGE"))
         {
-            ISwitchVectorProperty *svp = getSwitch(name);
-            IUUpdateSwitch(svp, states, names, n);
-            ISwitch *sp = IUFindOnSwitch(svp);
+            auto svp = getSwitch(name);
+            svp.update(states, names, n);
+            auto sp = svp.findOnSwitch();
             if (!sp)
                 return false;
-            IDSetSwitch(svp, nullptr);
+            svp.apply();
 
             if (!strcmp(sp->name, "SYNCCLEARDELTA"))
             {
                 bzero(&syncdata, sizeof(syncdata));
                 bzero(&syncdata2, sizeof(syncdata2));
-                IUFindNumber(StandardSyncNP, "STANDARDSYNC_RA")->value = syncdata.deltaRA;
-                IUFindNumber(StandardSyncNP, "STANDARDSYNC_DE")->value = syncdata.deltaDEC;
-                IDSetNumber(StandardSyncNP, nullptr);
-                IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_JD")->value           = syncdata.jd;
-                IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_SYNCTIME")->value     = syncdata.lst;
-                IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_CELESTIAL_RA")->value = syncdata.targetRA;
+                StandardSyncNP.findWidgetByName("STANDARDSYNC_RA")->setValue(syncdata.deltaRA);
+                StandardSyncNP.findWidgetByName("STANDARDSYNC_DE")->setValue(syncdata.deltaDEC);
+                StandardSyncNP.apply();
+
+                StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_JD")->setValue(syncdata.jd);
+                StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_SYNCTIME")->setValue(syncdata.lst);
+                StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_CELESTIAL_RA")->setValue(syncdata.targetRA);
                 ;
-                IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_CELESTIAL_DE")->value = syncdata.targetDEC;
+                StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_CELESTIAL_DE")->setValue(syncdata.targetDEC);
                 ;
-                IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_TELESCOPE_RA")->value = syncdata.telescopeRA;
+                StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_TELESCOPE_RA")->setValue(syncdata.telescopeRA);
                 ;
-                IUFindNumber(StandardSyncPointNP, "STANDARDSYNCPOINT_TELESCOPE_DE")->value = syncdata.telescopeDEC;
+                StandardSyncPointNP.findWidgetByName("STANDARDSYNCPOINT_TELESCOPE_DE")->setValue(syncdata.telescopeDEC);
                 ;
-                IDSetNumber(StandardSyncPointNP, nullptr);
+                StandardSyncPointNP.apply();
                 LOG_INFO("Cleared current Sync Data");
                 tpa_alt                                                     = 0.0;
                 tpa_az                                                      = 0.0;
-                IUFindNumber(SyncPolarAlignNP, "SYNCPOLARALIGN_ALT")->value = tpa_alt;
-                IUFindNumber(SyncPolarAlignNP, "SYNCPOLARALIGN_AZ")->value  = tpa_az;
-                IDSetNumber(SyncPolarAlignNP, nullptr);
+                SyncPolarAlignNP.findWidgetByName("SYNCPOLARALIGN_ALT")->setValue(tpa_alt);
+                SyncPolarAlignNP.findWidgetByName("SYNCPOLARALIGN_AZ")->setValue(tpa_az);
+                SyncPolarAlignNP.apply();
                 return true;
             }
         }
 
         if (!strcmp(name, "REVERSEDEC"))
         {
-            IUUpdateSwitch(ReverseDECSP, states, names, n);
+            ReverseDECSP.update(states, names, n);
 
-            ReverseDECSP->s = IPS_OK;
+            ReverseDECSP.setState(IPS_OK);
 
             UpdateDEInverted();
 
             LOG_INFO("Inverting Declination Axis.");
 
-            IDSetSwitch(ReverseDECSP, nullptr);
+            ReverseDECSP.apply();
         }
 
         if (!strcmp(name, "TARGETPIERSIDE"))
         {
-            IUUpdateSwitch(TargetPierSideSP, states, names, n);
+            TargetPierSideSP.update(states, names, n);
 
-            TargetPierSideSP->s = IPS_OK;
+            TargetPierSideSP.setState(IPS_OK);
 
             TargetPier = PIER_UNKNOWN;
-            if (IUFindSwitch(TargetPierSideSP, "PIER_EAST")->s == ISS_ON)
+            if (TargetPierSideSP.findWidgetByName("PIER_EAST")->getState() == ISS_ON)
             {
                 TargetPier = PIER_EAST;
                 LOG_INFO("Target pier side set to EAST");
             }
-            else if (IUFindSwitch(TargetPierSideSP, "PIER_WEST")->s == ISS_ON)
+            else if (TargetPierSideSP.findWidgetByName("PIER_WEST")->getState() == ISS_ON)
             {
                 TargetPier = PIER_WEST;
                 LOG_INFO("Target pier side set to WEST");
             }
 
-            IDSetSwitch(TargetPierSideSP, nullptr);
+            TargetPierSideSP.apply();
         }
 
         //if (MountInformationTP && MountInformationTP->tp && (!strcmp(MountInformationTP->tp[0].text, "EQ8") || !strcmp(MountInformationTP->tp[0].text, "AZEQ6"))) {
-        if (mount->HasHomeIndexers())
-        {
-            if (AutoHomeSP && strcmp(name, AutoHomeSP->name) == 0)
-            {
-                if ((TrackState != SCOPE_IDLE) && (TrackState != SCOPE_AUTOHOMING))
-                {
-                    if (TrackState != SCOPE_AUTOHOMING)
-                    {
-                        AutoHomeSP->s = IPS_IDLE;
-                        IUResetSwitch(AutoHomeSP);
-                        IDSetSwitch(AutoHomeSP, nullptr);
-                    }
-                    LOG_WARN("Can not start AutoHome. Scope not idle");
-                    return true;
-                }
-
-                if (TrackState == SCOPE_AUTOHOMING)
-                {
-                    AutoHomeSP->s = IPS_IDLE;
-                    IUResetSwitch(AutoHomeSP);
-                    IDSetSwitch(AutoHomeSP, nullptr);
-                    LOG_WARN("Aborting AutoHome.");
-                    Abort();
-                    return true;
-                }
-
-                if (AutohomeState == AUTO_HOME_IDLE)
-                {
-                    AutoHomeSP->s = IPS_OK;
-                    IUResetSwitch(AutoHomeSP);
-                    IDSetSwitch(AutoHomeSP, nullptr);
-                    LOG_WARN("*** AutoHome NOT TESTED. Press PERFORM AGAIN TO CONFIRM. ***");
-                    AutohomeState      = AUTO_HOME_CONFIRM;
-                    ah_confirm_timeout = 10;
-                    return true;
-                }
-                if (AutohomeState == AUTO_HOME_CONFIRM)
-                {
-                    IUUpdateSwitch(AutoHomeSP, states, names, n);
-                    AutoHomeSP->s = IPS_BUSY;
-                    LOG_INFO("Starting Autohome.");
-                    IDSetSwitch(AutoHomeSP, nullptr);
-                    TrackState = SCOPE_AUTOHOMING;
-                    try
-                    {
-                        LOG_INFO("AutoHome phase 1: turning off aux encoders");
-                        mount->TurnRAEncoder(false);
-                        mount->TurnDEEncoder(false);
-                        LOG_INFO("AutoHome phase 1: resetting home position indexes");
-                        mount->ResetRAIndexer();
-                        mount->ResetDEIndexer();
-                        LOG_INFO(
-                            "AutoHome phase 1: reading home position indexes to set directions");
-                        mount->GetRAIndexer();
-                        mount->GetDEIndexer();
-                        LOGF_INFO(
-                            "AutoHome phase 1: read home position indexes: RA=0x%x DE=0x%x",
-                            mount->GetlastreadRAIndexer(), mount->GetlastreadDEIndexer());
-                        if (mount->GetlastreadRAIndexer() == 0)
-                            ah_bSlewingUp_RA = true;
-                        else
-                            ah_bSlewingUp_RA = false;
-                        if (mount->GetlastreadDEIndexer() == 0)
-                            ah_bSlewingUp_DE = true;
-                        else
-                            ah_bSlewingUp_DE = false;
-                        ah_iPosition_RA = mount->GetRAEncoder();
-                        ah_iPosition_DE = mount->GetDEEncoder();
-                        ah_iChanges     = (5 * mount->GetRAEncoderTotal()) / 360;
-                        if (ah_bSlewingUp_RA)
-                            ah_iPosition_RA = ah_iPosition_RA - ah_iChanges;
-                        else
-                            ah_iPosition_RA = ah_iPosition_RA + ah_iChanges;
-                        ah_iChanges = (5 * mount->GetDEEncoderTotal()) / 360;
-                        if (ah_bSlewingUp_DE)
-                            ah_iPosition_DE = ah_iPosition_DE - ah_iChanges;
-                        else
-                            ah_iPosition_DE = ah_iPosition_DE + ah_iChanges;
-                        LOG_INFO(
-                            "AutoHome phase 1: trying to move further away from home position");
-                        LOGF_INFO(
-                            "AutoHome phase 1: slewing to RA=0x%x (up=%c) DE=0x%x (up=%c)", ah_iPosition_RA,
-                            (ah_bSlewingUp_RA ? '1' : '0'), ah_iPosition_DE, (ah_bSlewingUp_DE ? '1' : '0'));
-                        mount->AbsSlewTo(ah_iPosition_RA, ah_iPosition_DE, ah_bSlewingUp_RA, ah_bSlewingUp_DE);
-                        AutohomeState = AUTO_HOME_WAIT_PHASE1;
-                    }
-                    catch (EQModError e)
-                    {
-                        AutoHomeSP->s = IPS_ALERT;
-                        IUResetSwitch(AutoHomeSP);
-                        IDSetSwitch(AutoHomeSP, nullptr);
-                        AutohomeState = AUTO_HOME_IDLE;
-                        TrackState    = SCOPE_IDLE;
-                        RememberTrackState = TrackState;
-                        return (e.DefaultHandleException(this));
-                    }
-                }
-            }
-        }
 
         if (mount->HasAuxEncoders())
         {
-            if (AuxEncoderSP && strcmp(name, AuxEncoderSP->name) == 0)
+            if (AuxEncoderSP && AuxEncoderSP.isNameMatch(name))
             {
-                IUUpdateSwitch(AuxEncoderSP, states, names, n);
-                if (AuxEncoderSP->sp[1].s == ISS_ON)
+                AuxEncoderSP.update(states, names, n);
+                if (AuxEncoderSP[1].getState() == ISS_ON)
                 {
-                    AuxEncoderSP->s = IPS_OK;
+                    AuxEncoderSP.setState(IPS_OK);
                     LOG_DEBUG("Turning auxiliary encoders on.");
                     mount->TurnRAEncoder(true);
                     mount->TurnDEEncoder(true);
                 }
                 else
                 {
-                    AuxEncoderSP->s = IPS_IDLE;
+                    AuxEncoderSP.setState(IPS_IDLE);
                     LOG_DEBUG("Turning auxiliary encoders off.");
                     mount->TurnRAEncoder(false);
                     mount->TurnDEEncoder(false);
                 }
-                IDSetSwitch(AuxEncoderSP, nullptr);
+                AuxEncoderSP.apply();
             }
         }
 
         if (mount->HasPPEC())
         {
-            if (PPECTrainingSP && strcmp(name, PPECTrainingSP->name) == 0)
+            if (PPECTrainingSP && PPECTrainingSP.isNameMatch(name))
             {
-                IUUpdateSwitch(PPECTrainingSP, states, names, n);
-                if (PPECTrainingSP->sp[1].s == ISS_ON)
+                PPECTrainingSP.update(states, names, n);
+                if (PPECTrainingSP[1].getState() == ISS_ON)
                 {
                     if (TrackState != SCOPE_TRACKING)
                     {
-                        PPECTrainingSP->s = IPS_IDLE;
+                        PPECTrainingSP.setState(IPS_IDLE);
                         LOG_WARN("Can not start PPEC Training. Scope not tracking");
-                        IUResetSwitch(PPECTrainingSP);
-                        PPECTrainingSP->sp[0].s = ISS_ON;
-                        PPECTrainingSP->sp[1].s = ISS_OFF;
+                        PPECTrainingSP.reset();
+                        PPECTrainingSP[0].setState(ISS_ON);
+                        PPECTrainingSP[1].setState(ISS_OFF);
                     }
                     else
                     {
-                        PPECTrainingSP->s = IPS_BUSY;
+                        PPECTrainingSP.setState(IPS_BUSY);
                         LOG_INFO("Turning PPEC Training on.");
                         try
                         {
@@ -2926,81 +2823,82 @@ bool EQMod::ISNewSwitch(const char *dev, const char *name, ISState *states, char
                         catch (EQModError e)
                         {
                             LOG_WARN("Unable to start PPEC Training.");
-                            PPECTrainingSP->s       = IPS_ALERT;
-                            PPECTrainingSP->sp[0].s = ISS_ON;
-                            PPECTrainingSP->sp[1].s = ISS_OFF;
+                            PPECTrainingSP.setState(IPS_ALERT);
+                            PPECTrainingSP[0].setState(ISS_ON);
+                            PPECTrainingSP[1].setState(ISS_OFF);
                         }
                     }
                 }
                 else
                 {
-                    PPECTrainingSP->s = IPS_IDLE;
+                    PPECTrainingSP.setState(IPS_IDLE);
                     LOG_INFO("Turning PPEC Training off.");
                     mount->TurnPPECTraining(false);
                 }
-                IDSetSwitch(PPECTrainingSP, nullptr);
+                PPECTrainingSP.apply();
                 return true;
             }
-            if (PPECSP && strcmp(name, PPECSP->name) == 0)
+            if (PPECSP && PPECSP.isNameMatch(name))
             {
-                IUUpdateSwitch(PPECSP, states, names, n);
-                if (PPECSP->sp[1].s == ISS_ON)
+                PPECSP.update(states, names, n);
+                if (PPECSP[1].getState() == ISS_ON)
                 {
-                    PPECSP->s = IPS_BUSY;
+                    PPECSP.setState(IPS_BUSY);
                     LOG_INFO("Turning PPEC on.");
                     mount->TurnPPEC(true);
                 }
                 else
                 {
-                    PPECSP->s = IPS_IDLE;
+                    PPECSP.setState(IPS_IDLE);
                     LOG_INFO("Turning PPEC off.");
                     mount->TurnPPEC(false);
                 }
-                IDSetSwitch(PPECSP, nullptr);
+                PPECSP.apply();
                 return true;
             }
         }
 
         if (mount->HasSnapPort1())
         {
-            if (SNAPPORT1SP && strcmp(name, SNAPPORT1SP->name) == 0)
+            if (SNAPPORT1SP && SNAPPORT1SP.isNameMatch(name))
             {
-                IUUpdateSwitch(SNAPPORT1SP, states, names, n);
-                if (SNAPPORT1SP->sp[1].s == ISS_ON)
+                SNAPPORT1SP.update(states, names, n);
+                if (SNAPPORT1SP[1].getState() == ISS_ON)
                 {
-                    SNAPPORT1SP->s = IPS_OK;
+                    SNAPPORT1SP.setState(IPS_OK);
                     DEBUG(INDI::Logger::DBG_DEBUG, "Turning snap port 1 on.");
                     mount->TurnSnapPort1(true);
                 }
                 else
                 {
-                    SNAPPORT1SP->s = IPS_IDLE;
+                    SNAPPORT1SP.setState(IPS_IDLE);
                     DEBUG(INDI::Logger::DBG_DEBUG, "Turning snap port 1 off.");
                     mount->TurnSnapPort1(false);
                 }
-                IDSetSwitch(SNAPPORT1SP, nullptr);
+                SNAPPORT1SP.apply();
                 return true;
             }
         }
 
         if (mount->HasSnapPort2())
         {
-            if (SNAPPORT2SP && strcmp(name, SNAPPORT2SP->name) == 0)
+            if (SNAPPORT2SP && SNAPPORT2SP.isNameMatch(name))
             {
-                IUUpdateSwitch(SNAPPORT2SP, states, names, n);
-                if (SNAPPORT2SP->sp[1].s == ISS_ON)
+                SNAPPORT2SP.update(states, names, n);
+                if (SNAPPORT2SP[1].getState() == ISS_ON)
                 {
-                    SNAPPORT2SP->s = IPS_OK;
+                    SNAPPORT2SP.setState(IPS_OK);
                     DEBUG(INDI::Logger::DBG_DEBUG, "Turning snap port 2 on.");
                     mount->TurnSnapPort2(true);
                 }
                 else
                 {
-                    SNAPPORT2SP->s = IPS_IDLE;
+                    SNAPPORT2SP.setState(IPS_IDLE);
                     DEBUG(INDI::Logger::DBG_DEBUG, "Turning snap port 2 off.");
                     mount->TurnSnapPort2(false);
                 }
-                IDSetSwitch(SNAPPORT2SP, nullptr);
+
+                SNAPPORT2SP.apply();
                 return true;
             }
         }
@@ -3008,15 +2906,14 @@ bool EQMod::ISNewSwitch(const char *dev, const char *name, ISState *states, char
 
 
 #if defined WITH_ALIGN || defined WITH_ALIGN_GEEHALEL
-        if (AlignSyncModeSP && strcmp(name, AlignSyncModeSP->name) == 0)
+        if (AlignSyncModeSP && AlignSyncModeSP.isNameMatch(name))
         {
-            ISwitch *sw;
-            AlignSyncModeSP->s = IPS_OK;
-            IUUpdateSwitch(AlignSyncModeSP, states, names, n);
+            AlignSyncModeSP.setState(IPS_OK);
+            AlignSyncModeSP.update(states, names, n);
             //for (int i=0; i < n; i++)
             //  IDLog("AlignSyncMode Switch %s %d\n", names[i], states[i]);
-            sw = IUFindOnSwitch(AlignSyncModeSP);
-            IDSetSwitch(AlignSyncModeSP, "Sync mode set to %s", sw->label);
+            auto sw = AlignSyncModeSP.findOnSwitch();
+            AlignSyncModeSP.apply("Sync mode set to %s", sw->getLabel());
             return true;
         }
 #endif
@@ -3145,11 +3042,11 @@ double EQMod::GetRASlew()
 {
     ISwitch *sw;
     double rate = 1.0;
-    sw          = IUFindOnSwitch(&SlewRateSP);
+    sw          = SlewRateSP.findOnSwitch();
     if (!strcmp(sw->name, "SLEWCUSTOM"))
-        rate = IUFindNumber(SlewSpeedsNP, "RASLEW")->value;
+        rate = SlewSpeedsNP.findWidgetByName("RASLEW")->getValue();
     else
-        rate = *((double *)sw->aux);
+        rate = *((int *)sw->aux);
     return rate;
 }
 
@@ -3157,11 +3054,11 @@ double EQMod::GetDESlew()
 {
     ISwitch *sw;
     double rate = 1.0;
-    sw          = IUFindOnSwitch(&SlewRateSP);
+    sw          = SlewRateSP.findOnSwitch();
     if (!strcmp(sw->name, "SLEWCUSTOM"))
-        rate = IUFindNumber(SlewSpeedsNP, "DESLEW")->value;
+        rate = SlewSpeedsNP.findWidgetByName("DESLEW")->getValue();
     else
-        rate = *((double *)sw->aux);
+        rate = *((int *)sw->aux);
     return rate;
 }
 
@@ -3286,19 +3183,20 @@ bool EQMod::Abort()
         }
     }
 
-    GuideNSNP.s = IPS_IDLE;
-    IDSetNumber(&GuideNSNP, nullptr);
-    GuideWENP.s = IPS_IDLE;
-    IDSetNumber(&GuideWENP, nullptr);
+    GuideNSNP.setState(IPS_IDLE);
+    GuideNSNP.apply();
+    GuideWENP.setState(IPS_IDLE);
+    GuideWENP.apply();
 #if 0
     TrackModeSP->s = IPS_IDLE;
     IUResetSwitch(TrackModeSP);
     IDSetSwitch(TrackModeSP, nullptr);
 #endif
     AutohomeState = AUTO_HOME_IDLE;
-    AutoHomeSP->s = IPS_IDLE;
-    IUResetSwitch(AutoHomeSP);
-    IDSetSwitch(AutoHomeSP, nullptr);
+    HomeSP.setState(IPS_IDLE);
+    HomeSP.reset();
+    HomeSP.apply();
+
     TrackState = SCOPE_IDLE;
     RememberTrackState = TrackState;
     if (gotoparams.completed == false)
@@ -3614,21 +3512,21 @@ bool EQMod::saveConfigItems(FILE *fp)
     INDI::Telescope::saveConfigItems(fp);
 
     if (BacklashNP)
-        IUSaveConfigNumber(fp, BacklashNP);
+        BacklashNP.save(fp);
     if (UseBacklashSP)
-        IUSaveConfigSwitch(fp, UseBacklashSP);
+        UseBacklashSP.save(fp);
     if (GuideRateNP)
-        IUSaveConfigNumber(fp, GuideRateNP);
+        GuideRateNP.save(fp);
     if (PulseLimitsNP)
-        IUSaveConfigNumber(fp, PulseLimitsNP);
+        PulseLimitsNP.save(fp);
     if (SlewSpeedsNP)
-        IUSaveConfigNumber(fp, SlewSpeedsNP);
+        SlewSpeedsNP.save(fp);
     if (ReverseDECSP)
-        IUSaveConfigSwitch(fp, ReverseDECSP);
+        ReverseDECSP.save(fp);
     if (LEDBrightnessNP)
-        IUSaveConfigNumber(fp, LEDBrightnessNP);
+        LEDBrightnessNP.save(fp);
     if (HasPECState())
-        IUSaveConfigSwitch(fp, PPECSP);
+        PPECSP.save(fp);
 
 #ifdef WITH_ALIGN_GEEHALEL
     if (align)
@@ -3682,7 +3580,7 @@ bool EQMod::SetTrackEnabled(bool enabled)
     {
         if (enabled)
         {
-            LOGF_INFO("Start Tracking (%s).", IUFindOnSwitch(&TrackModeSP)->label);
+            LOGF_INFO("Start Tracking (%s).", TrackModeSP.findOnSwitch()->getLabel());
             TrackState     = SCOPE_TRACKING;
             RememberTrackState = TrackState;
             mount->StartRATracking(GetRATrackRate());
@@ -3690,7 +3588,7 @@ bool EQMod::SetTrackEnabled(bool enabled)
         }
         else if (enabled == false)
         {
-            LOGF_WARN("Stopping Tracking (%s).", IUFindOnSwitch(&TrackModeSP)->label);
+            LOGF_WARN("Stopping Tracking (%s).", TrackModeSP.findOnSwitch()->getLabel());
             TrackState     = SCOPE_IDLE;
             RememberTrackState = TrackState;
             mount->StopRA();
@@ -3703,4 +3601,82 @@ bool EQMod::SetTrackEnabled(bool enabled)
     }
 
     return true;
+}
+
+IPState EQMod::ExecuteHomeAction(TelescopeHomeAction action)
+{
+    if (action != HOME_FIND)
+        return IPS_ALERT;
+
+    if ((TrackState != SCOPE_IDLE) && (TrackState != SCOPE_AUTOHOMING))
+    {
+        LOG_WARN("Can not start AutoHome. Scope not idle");
+        return IPS_IDLE;
+    }
+
+    if (TrackState == SCOPE_AUTOHOMING)
+    {
+        LOG_WARN("Aborting AutoHome.");
+        Abort();
+        return IPS_IDLE;
+    }
+
+    if (AutohomeState == AUTO_HOME_IDLE)
+    {
+        LOG_INFO("Starting Autohome.");
+        TrackState = SCOPE_AUTOHOMING;
+        try
+        {
+            LOG_INFO("AutoHome phase 1: turning off aux encoders");
+            mount->TurnRAEncoder(false);
+            mount->TurnDEEncoder(false);
+            LOG_INFO("AutoHome phase 1: resetting home position indexes");
+            mount->ResetRAIndexer();
+            mount->ResetDEIndexer();
+            LOG_INFO(
+                "AutoHome phase 1: reading home position indexes to set directions");
+            mount->GetRAIndexer();
+            mount->GetDEIndexer();
+            LOGF_INFO(
+                "AutoHome phase 1: read home position indexes: RA=0x%x DE=0x%x",
+                mount->GetlastreadRAIndexer(), mount->GetlastreadDEIndexer());
+            if (mount->GetlastreadRAIndexer() == 0)
+                ah_bSlewingUp_RA = true;
+            else
+                ah_bSlewingUp_RA = false;
+            if (mount->GetlastreadDEIndexer() == 0)
+                ah_bSlewingUp_DE = true;
+            else
+                ah_bSlewingUp_DE = false;
+            ah_iPosition_RA = mount->GetRAEncoder();
+            ah_iPosition_DE = mount->GetDEEncoder();
+            ah_iChanges     = (5 * mount->GetRAEncoderTotal()) / 360;
+            if (ah_bSlewingUp_RA)
+                ah_iPosition_RA = ah_iPosition_RA - ah_iChanges;
+            else
+                ah_iPosition_RA = ah_iPosition_RA + ah_iChanges;
+            ah_iChanges = (5 * mount->GetDEEncoderTotal()) / 360;
+            if (ah_bSlewingUp_DE)
+                ah_iPosition_DE = ah_iPosition_DE - ah_iChanges;
+            else
+                ah_iPosition_DE = ah_iPosition_DE + ah_iChanges;
+            LOG_INFO(
+                "AutoHome phase 1: trying to move further away from home position");
+            LOGF_INFO(
+                "AutoHome phase 1: slewing to RA=0x%x (up=%c) DE=0x%x (up=%c)", ah_iPosition_RA,
+                (ah_bSlewingUp_RA ? '1' : '0'), ah_iPosition_DE, (ah_bSlewingUp_DE ? '1' : '0'));
+            mount->AbsSlewTo(ah_iPosition_RA, ah_iPosition_DE, ah_bSlewingUp_RA, ah_bSlewingUp_DE);
+            AutohomeState = AUTO_HOME_WAIT_PHASE1;
+            return IPS_BUSY;
+        }
+        catch (EQModError e)
+        {
+            AutohomeState = AUTO_HOME_IDLE;
+            TrackState    = SCOPE_IDLE;
+            RememberTrackState = TrackState;
+            return IPS_ALERT;
+        }
+    }
+
+    return IPS_ALERT;
 }

@@ -1,6 +1,6 @@
 %define __cmake_in_source_build %{_vpath_builddir}
 Name: libpktriggercord
-Version:2.0.0.git
+Version:2.1.3.git
 Release: %(date -u +%%Y%%m%%d%%H%%M%%S)%{?dist}
 Summary: Instrument Neutral Distributed Interface 3rd party drivers
 
@@ -55,7 +55,7 @@ and scalable. It supports common DCS functions such as remote control,
 data acquisition, monitoring, and a lot more. This is a 3rd party driver.
 
 
-%prep -v
+%prep
 %autosetup -v -p1 -n indi-3rdparty-master
 
 %build
@@ -76,8 +76,8 @@ make DESTDIR=%{buildroot} install
 %files
 %{_libdir}/*
 %{_includedir}/libpktriggercord
-/lib/udev/rules.d/95-pentax.rules
-/lib/udev/rules.d/95-samsung.rules
+/usr/lib/udev/rules.d/95-pentax.rules
+/usr/lib/udev/rules.d/95-samsung.rules
 /usr/share/pktriggercord/pentax_settings.json
 
 

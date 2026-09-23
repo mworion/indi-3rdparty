@@ -1,14 +1,16 @@
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 project (libplayerone)
 
-# Using PlayerOne Camera SDK Version 3.1.1 updated on 2023-1-18
-# Using PlayerOne EFW    SDK Version 1.0.0 updated on 2023-1-11
+# Using PlayerOne Camera SDK Version 3.10.1 updated on 2025-04-30
+# Using PlayerOne EFW    SDK Version 1.2.3 updated on 2025-11-25
 
-set (POACAM_VERSION "3.1.1")
+set (POACAM_VERSION "3.10.1")
 set (POACAM_SOVERSION "3")
 
-set (POAEFW_VERSION "1.0.0")
+set (POAEFW_VERSION "1.2.3")
 set (POAEFW_SOVERSION "1")
+
+option(INDI_INSTALL_UDEV_RULES "Install UDEV rules" On)
 
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
@@ -26,8 +28,8 @@ if (APPLE)
   set_property (TARGET PlayerOneCamera  PROPERTY IMPORTED_LOCATION "mac/libPlayerOneCamera.bin")
   set_property (TARGET PlayerOnePW      PROPERTY IMPORTED_LOCATION "mac/libPlayerOnePW.bin")
     
-  FIX_LIBRARY_ID("libPlayerOneCamera" "mac/libPlayerOneCamera.bin" "PLAYER ONE")
-  FIX_LIBRARY_ID("libPlayerOnePW"     "mac/libPlayerOnePW.bin" "PLAYER ONE")
+  FIX_MACOS_LIBRARIES("libPlayerOneCamera" "mac/libPlayerOneCamera.bin" "PLAYER ONE")
+  FIX_MACOS_LIBRARIES("libPlayerOnePW"     "mac/libPlayerOnePW.bin" "PLAYER ONE")
 
 elseif (UNIX AND NOT WIN32)
 
@@ -47,14 +49,16 @@ elseif (UNIX AND NOT WIN32)
   endif ()
 
   # Install udev rules
-  set (UDEVRULES_INSTALL_DIR "/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
-  install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/99-player_one_astronomy.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  if (INDI_INSTALL_UDEV_RULES)
+    set (UDEVRULES_INSTALL_DIR "/usr/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
+    install (FILES ${CMAKE_CURRENT_SOURCE_DIR}/99-player_one_astronomy.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  endif ()
 
 endif ()
 
 # Install header files
 install (
-  FILES PlayerOneCamera.h PlayerOnePW.h
+  FILES PlayerOneCamera.h PlayerOnePW.h ConvFuncs.h
   DESTINATION include/libplayerone
 )
 

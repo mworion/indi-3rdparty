@@ -1,3 +1,155 @@
+indi-playerone (1.24) bionic; urgency=low
+
+  * Available exposure change during video streaming
+  * Refactor with thin, type-safe C++ wrapper for C SDK
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Wed, 12 Aug 2026 12:00:00 +0900
+
+indi-playerone (1.23) bionic; urgency=low
+
+  * BugFix: Error handling of getImageData()/getExposure()
+  * Replace usleep() to wait_for()
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sun, 9 Aug 2026 12:00:00 +0900
+
+indi-playerone (1.22) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.10.0
+  * Update PlayerOnePW SDK v1.2.3
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sat, 24 Jan 2026 14:10:45 +0900
+
+indi-playerone (1.21) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.9.1
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sat, 15 Nov 2025 15:55:45 +0900
+
+indi-playerone (1.20) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.9.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Fri, 5 Sep 2025 17:18:26 +0900
+
+indi-playerone (1.19) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.8.1
+  * Update PlayerOnePW SDK v1.2.2
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sat, 5 Apr 2025 12:00:00 +0900
+
+indi-playerone (1.18) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.8.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Fri, 21 Feb 2025 12:00:00 +0900
+
+indi-playerone (1.17) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.7.1
+  * Update PlayerOnePW SDK v1.2.1
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Tue, 3 Dec 2024 12:00:00 +0900
+
+indi-playerone (1.16) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.7.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sat, 21 Sep 2024 12:00:00 +0900
+ 
+ indi-playerone (1.15) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.6.3
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sun, 14 Jul 2024 12:00:00 +0900
+
+indi-playerone (1.14) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.6.2
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sun, 12 May 2024 12:00:00 +0900
+
+indi-playerone (1.13) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.6.1
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Thu, 4 Jan 2024 12:00:00 +0900
+
+indi-playerone (1.12) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.6.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Wed, 20 Sep 2023 12:00:00 +0900
+
+indi-playerone (1.11) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.5.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sat, 2 Sep 2023 12:00:00 +0900
+
+indi-playerone (1.10) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.4.1
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sat, 29 Jul 2023 12:00:00 +0900
+
+indi-playerone (1.9) bionic; urgency=low
+
+  * Add sensor mode control for cameras that support it
+
+ -- Jarno Paananen <jarno.paananen@gmail.com>  Thu, 20 Jul 2023 01:16:17 +0300
+
+indi-playerone (1.8) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.4.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Tue, 27 Jun 2023 12:00:00 +0900
+
+indi-playerone (1.7) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK v3.3.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Tue, 9 Feb 2023 12:00:00 +0900
+
+indi-playerone (1.6) bionic; urgency=low
+
+  * Update libplayerone with PlayerOnePW SDK v1.2.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sat, 6 Feb 2023 12:00:00 +0900
+
+indi-playerone (1.5) bionic; urgency=low
+
+  * BugFix: top quarter noise on bin2 image
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Thu, 27 Apr 2023 12:00:00 +0900
+
+indi-playerone (1.4) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK to v3.2.2
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Wed, 15 Mar 2023 12:00:00 +0900
+
+indi-playerone (1.3) bionic; urgency=low
+
+  * Update PlayerOneCamera SDK to v3.2.1
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Thu, 2 Mar 2023 12:00:00 +0900
+
+indi-playerone (1.2) bionic; urgency=low
+
+  * Add single camera driver for multi threading
+  * Add flip property with bayer compensation
+  * Add nickname property for multi camera driver
+  * Update PlayerOneCamera SDK to v3.2.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Fri, 24 Feb 2023 12:00:00 +0900
+
+indi-playerone (1.1) bionic; urgency=low
+
+  * Update libplayerone with PlayerOnePW SDK v1.1.0
+
+ -- Hiroshi SAITO <hiro3110g@gmail.com>  Sun, 5 Feb 2023 12:00:00 +0900
+
 indi-playerone (1.0) bionic; urgency=low
 
   * Add PlayerOne Filter Wheel driver

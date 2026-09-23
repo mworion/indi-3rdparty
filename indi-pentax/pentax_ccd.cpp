@@ -70,9 +70,9 @@ bool PentaxCCD::initProperties()
 
     PrimaryCCD.setMinMaxStep("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", 0, 30, 1, false);
 
-    IUSaveText(&BayerT[2], "RGGB");
+    BayerTP[2].setText("RGGB");
 
-    PrimaryCCD.getCCDInfo()->p = IP_RW;
+    PrimaryCCD.getCCDInfo().setPermission(IP_RW);
 
     uint32_t cap = CCD_HAS_BAYER | CCD_HAS_STREAMING;
     SetCCDCapability(cap);
@@ -92,8 +92,6 @@ void PentaxCCD::ISGetProperties(const char *dev)
 
 bool PentaxCCD::updateProperties()
 {
-    INDI::CCD::updateProperties();
-
     if (isConnected())
     {
         setupParams();
@@ -109,6 +107,8 @@ bool PentaxCCD::updateProperties()
         }
 
         buildCaptureSwitches();
+
+        INDI::CCD::updateProperties();
 
         defineProperty(&autoFocusSP);
         if (EncodeFormatSP[FORMAT_FITS].getState() == ISS_ON)
@@ -504,7 +504,7 @@ bool PentaxCCD::StopStreaming()
 ISwitch * PentaxCCD::create_switch(const char * basestr, std::vector<string> options, int setidx)
 {
 
-    ISwitch * sw     = static_cast<ISwitch *>(calloc(sizeof(ISwitch), options.size()));
+    ISwitch * sw     = static_cast<ISwitch *>(calloc(options.size(), sizeof(ISwitch)));
     ISwitch * one_sw = sw;
 
     char sw_name[MAXINDINAME];
@@ -514,7 +514,7 @@ ISwitch * PentaxCCD::create_switch(const char * basestr, std::vector<string> opt
     for (int i = 0; i < (int)options.size(); i++)
     {
         snprintf(sw_name, MAXINDINAME, "%s%d", basestr, i);
-        strncpy(sw_label, options[i].c_str(), MAXINDILABEL);
+        snprintf(sw_label, sizeof(sw_label), "%s", options[i].c_str());
         sw_state = (i == setidx) ? ISS_ON : ISS_OFF;
 
         IUFillSwitch(one_sw++, sw_name, sw_label, sw_state);
@@ -673,11 +673,9 @@ bool PentaxCCD::saveConfigItems(FILE * fp)
     return INDI::CCD::saveConfigItems(fp);
 }
 
-void PentaxCCD::addFITSKeywords(INDI::CCDChip * targetChip)
+void PentaxCCD::addFITSKeywords(INDI::CCDChip * targetChip, std::vector<INDI::FITSRecord> &fitsKeywords)
 {
-    INDI::CCD::addFITSKeywords(targetChip);
-
-    int status = 0;
+    INDI::CCD::addFITSKeywords(targetChip, fitsKeywords);
 
     if (mIsoSP.nsp > 0)
     {
@@ -686,7 +684,7 @@ void PentaxCCD::addFITSKeywords(INDI::CCDChip * targetChip)
         {
             int isoSpeed = atoi(onISO->label);
             if (isoSpeed > 0)
-                fits_update_key_s(*targetChip->fitsFilePointer(), TUINT, "ISOSPEED", &isoSpeed, "ISO Speed", &status);
+                fitsKeywords.push_back({"ISOSPEED", isoSpeed, "ISO Speed"});
         }
     }
 }
@@ -728,7 +726,7 @@ void PentaxCCD::getCaptureSettingsState()
 
 string PentaxCCD::getUploadFilePrefix()
 {
-    return UploadSettingsT[UPLOAD_DIR].text + string("/") + UploadSettingsT[UPLOAD_PREFIX].text;
+    return UploadSettingsTP[UPLOAD_DIR].getText() + string("/") + UploadSettingsTP[UPLOAD_PREFIX].getText();
 }
 
 bool PentaxCCD::SetCaptureFormat(uint8_t index)

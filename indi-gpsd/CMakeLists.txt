@@ -1,6 +1,6 @@
 ########### NexStar Evolution INDI driver ##############
 PROJECT(indi_gpsd C CXX)
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 
 include(GNUInstallDirs)
 
@@ -17,7 +17,7 @@ find_package(ZLIB REQUIRED)
 find_package(GPSD REQUIRED)
 
 set(GPSD_VERSION_MAJOR 0)
-set(GPSD_VERSION_MINOR 5)
+set(GPSD_VERSION_MINOR 6)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config.h )
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/indi_gpsd.xml.cmake ${CMAKE_CURRENT_BINARY_DIR}/indi_gpsd.xml )
@@ -32,9 +32,9 @@ include(CMakeCommon)
 add_executable(indi_gpsd gps_driver.cpp)
 target_link_libraries(indi_gpsd ${INDI_LIBRARIES} ${GPSD_LIBRARIES} ${NOVA_LIBRARIES})
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
+if (CMAKE_SYSTEM_NAME MATCHES "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
     target_link_libraries(indi_gpsd rt)
-endif (CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
+endif (CMAKE_SYSTEM_NAME MATCHES "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
 
 install(TARGETS indi_gpsd RUNTIME DESTINATION bin )
 

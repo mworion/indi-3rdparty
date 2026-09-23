@@ -1,7 +1,7 @@
 /*
     ASI CCD Driver
 
-    Copyright (C) 2015-2021 Jasem Mutlaq (mutlaqja@ikarustech.com)
+    Copyright (C) 2015-2026 Jasem Mutlaq (mutlaqja@ikarustech.com)
     Copyright (C) 2018 Leonard Bottleman (leonard@whiteweasel.net)
     Copyright (C) 2021 Pawel Soja (kernel32.pl@gmail.com)
 
@@ -23,6 +23,7 @@
 #pragma once
 
 #include <ASICamera2.h>
+#include <libusb-1.0/libusb.h>
 
 #include "indipropertyswitch.h"
 #include "indipropertynumber.h"
@@ -39,6 +40,7 @@ class ASIBase : public INDI::CCD
 {
     public:
         ASIBase();
+        ASIBase(const ASI_CAMERA_INFO &camInfo, const std::string &serialNumber);
         ~ASIBase() override;
 
         virtual const char *getDefaultName() override;
@@ -59,6 +61,8 @@ class ASIBase : public INDI::CCD
         virtual bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
         virtual bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n) override;
 
+        virtual void nicknameSet(const char *nickname) override;
+
         // Streaming
         virtual bool StartStreaming() override;
         virtual bool StopStreaming() override;
@@ -73,7 +77,7 @@ class ASIBase : public INDI::CCD
         virtual IPState GuideWest(uint32_t ms) override;
 
         // ASI specific keywords
-        virtual void addFITSKeywords(INDI::CCDChip *targetChip) override;
+        virtual void addFITSKeywords(INDI::CCDChip *targetChip, std::vector<INDI::FITSRecord> &fitsKeywords) override;
 
         // Save config
         virtual bool saveConfigItems(FILE *fp) override;
@@ -132,6 +136,9 @@ class ASIBase : public INDI::CCD
         /** Can the camera flip the image horizontally and vertically */
         bool hasFlipControl();
 
+        /** Reset USB device when camera gets stuck */
+        void resetUSBDevice();
+
         /** Additional Properties to INDI::CCD */
         INDI::PropertyNumber  CoolerNP {1};
         INDI::PropertySwitch  CoolerSP {2};
@@ -143,7 +150,6 @@ class ASIBase : public INDI::CCD
         INDI::PropertyNumber  ADCDepthNP   {1};
         INDI::PropertyText    SDKVersionSP {1};
         INDI::PropertyText    SerialNumberTP {1};
-        INDI::PropertyText    NicknameTP {1};
 
         INDI::PropertyNumber  BlinkNP {2};
         enum
@@ -159,7 +165,9 @@ class ASIBase : public INDI::CCD
             FLIP_VERTICAL
         };
 
-        std::string mCameraName, mCameraID, mSerialNumber, mNickname;
+        INDI::PropertySwitch USBResetSP {2};
+
+        std::string mCameraName, mCameraID, mSerialNumber;
         ASI_CAMERA_INFO mCameraInfo;
         uint8_t mExposureRetry {0};
         ASI_IMG_TYPE mCurrentVideoFormat;

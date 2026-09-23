@@ -21,8 +21,10 @@
  */
 
 #include "qhy_ccd.h"
+#include "qhy_ccd_hotplug_handler.h"
 #include "config.h"
 #include <stream/streammanager.h>
+#include <hotplugmanager.h>
 
 #include <libnova/julian_day.h>
 #include <algorithm>
@@ -38,87 +40,17 @@
 
 static class Loader
 {
-        std::deque<std::unique_ptr<QHYCCD>> cameras;
+        std::shared_ptr<QHYCCDHotPlugHandler> hotPlugHandler;
     public:
         Loader()
         {
-#if !defined(USE_SIMULATION)
-            int ret = InitQHYCCDResource();
-
-            if (ret != QHYCCD_SUCCESS)
-            {
-                IDLog("Init QHYCCD SDK failed (%d)\n", ret);
-                return;
-            }
-#endif
-
-            //#if defined(__APPLE__)
-            //    char driverSupportPath[128];
-            //    if (getenv("INDIPREFIX") != nullptr)
-            //        sprintf(driverSupportPath, "%s/Contents/Resources", getenv("INDIPREFIX"));
-            //    else
-            //        strncpy(driverSupportPath, "/usr/local/lib/indi", 128);
-            //    strncat(driverSupportPath, "/DriverSupport/qhy/firmware", 128);
-            //    IDLog("QHY firmware path: %s\n", driverSupportPath);
-            //    OSXInitQHYCCDFirmware(driverSupportPath);
-            //#endif
-
-            // JM 2019-03-07: Use OSXInitQHYCCDFirmwareArray as recommended by QHY
-#if defined(__APPLE__)
-            OSXInitQHYCCDFirmwareArray();
-            // Wait a bit before calling GetDeviceIDs on MacOS
-            usleep(2000000);
-#endif
-
-            for (const auto &deviceId : GetDevicesIDs())
-            {
-                cameras.push_back(std::unique_ptr<QHYCCD>(new QHYCCD(deviceId.c_str())));
-            }
-        }
-
-        ~Loader()
-        {
-            ReleaseQHYCCDResource();
-        }
-
-    public:
-
-        // Scan for the available devices
-        std::vector<std::string> GetDevicesIDs()
-        {
-            char camid[MAXINDIDEVICE];
-            int deviceCount = 0;
-            std::vector<std::string> devices;
-
-#if defined(USE_SIMULATION)
-            deviceCount = 2;
-#else
-            deviceCount = ScanQHYCCD();
-#endif
-
-            for (int i = 0; i < deviceCount; i++)
-            {
-#if defined(USE_SIMULATION)
-                int ret = QHYCCD_SUCCESS;
-                snprintf(camid, MAXINDIDEVICE, "Model %d", i + 1);
-#else
-                int ret = GetQHYCCDId(i, camid);
-#endif
-                if (ret == QHYCCD_SUCCESS)
-                {
-                    devices.push_back(std::string(camid));
-                }
-                else
-                {
-                    IDLog("#%d GetQHYCCDId error (%d)\n", i, ret);
-                }
-            }
-
-            return devices;
+            hotPlugHandler = std::make_shared<QHYCCDHotPlugHandler>();
+            INDI::HotPlugManager::getInstance().registerHandler(hotPlugHandler);
+            INDI::HotPlugManager::getInstance().start(1000); // Start hot-plug checks every 1 second
         }
 } loader;
 
-QHYCCD::QHYCCD(const char *name) : FilterInterface(this)
+QHYCCD::QHYCCD(const char *name, const char *camID) : FilterInterface(this)
 {
     HasUSBTraffic = false;
     HasUSBSpeed   = false;
@@ -127,8 +59,15 @@ QHYCCD::QHYCCD(const char *name) : FilterInterface(this)
     HasFilters    = false;
 
     snprintf(this->m_Name, MAXINDINAME, "QHY CCD %.15s", name);
-    snprintf(this->m_CamID, MAXINDINAME, "%s", name);
-    setDeviceName(this->m_Name);
+    snprintf(this->m_CamID, MAXINDINAME, "%s", camID);
+
+    LOGF_INFO("*** This is the camera name: [%s]", m_Name);
+    LOGF_INFO("*** This is the camera ID: [%s]", m_CamID);
+
+    // Apply saved nickname from camera ID. Returns true if a nickname was found.
+    // If no nickname exists, fall back to the model-specific camera name.
+    if (!setDeviceNicknameFromId(m_CamID))
+        setDeviceName(this->m_Name);
 
     setVersion(INDI_QHY_VERSION_MAJOR, INDI_QHY_VERSION_MINOR);
 
@@ -155,8 +94,8 @@ bool QHYCCD::initProperties()
     INDI::CCD::initProperties();
     INDI::FilterInterface::initProperties(FILTER_TAB);
 
-    FilterSlotN[0].min = 1;
-    FilterSlotN[0].max = 9;
+    FilterSlotNP[0].setMin(1);
+    FilterSlotNP[0].setMax(9);
 
     // QHY SDK Version
     IUFillText(&SDKVersionT[0], "VERSION", "Version", "NA");
@@ -169,7 +108,7 @@ bool QHYCCD::initProperties()
                        ISR_1OFMANY, 0, IPS_IDLE);
 
     // CCD Regulation power
-    IUFillNumber(&CoolerN[0], "CCD_COOLER_VALUE", "Cooling Power (%)", "%+06.2f", 0., 100., 5, 0.0);
+    IUFillNumber(&CoolerN[0], "CCD_COOLER_VALUE", "Cooling Power (%)", "%.2f", 0., 100., 5, 0.0);
     IUFillNumberVector(&CoolerNP, CoolerN, 1, getDeviceName(), "CCD_COOLER_POWER", "Cooling Power", MAIN_CONTROL_TAB,
                        IP_RO, 60, IPS_IDLE);
 
@@ -206,6 +145,11 @@ bool QHYCCD::initProperties()
     IUFillNumber(&HumidityN[0], "HUMIDITY", "%", "%.2f", -100, 1000, 0.1, 0);
     IUFillNumberVector(&HumidityNP, HumidityN, 1, getDeviceName(), "CCD_HUMIDITY", "Humidity", MAIN_CONTROL_TAB,
                        IP_RO, 60, IPS_IDLE);
+
+    // CAA Rotator (angle in degrees, negative for reverse rotation)
+    IUFillNumber(&CAARotatorN[0], "CAA_ANGLE", "Angle (°)", "%.2f", -360, 360, 0.1, 0);
+    IUFillNumberVector(&CAARotatorNP, CAARotatorN, 1, getDeviceName(), "CAA_ROTATOR", "CAA Rotator", MAIN_CONTROL_TAB,
+                       IP_RW, 60, IPS_IDLE);
 
     // Cooler Mode
     IUFillSwitch(&CoolerModeS[COOLER_AUTOMATIC], "COOLER_AUTOMATIC", "Auto", ISS_ON);
@@ -320,6 +264,7 @@ bool QHYCCD::initProperties()
     IUFillTextVector(&GPSDataNowTP, GPSDataNowT, 4, getDeviceName(), "GPS_DATA_NOW", "Now", GPS_DATA_TAB, IP_RO, 60, IPS_IDLE);
 
     addAuxControls();
+    addNicknameControl();
     setDriverInterface(getDriverInterface());
 
     return true;
@@ -361,8 +306,8 @@ void QHYCCD::ISGetProperties(const char *dev)
         if (HasFilters)
         {
             //Define the Filter Slot and name properties
-            defineProperty(&FilterSlotNP);
-            if (FilterNameT != nullptr)
+            defineProperty(FilterSlotNP);
+            if (FilterNameTP.size() > 0)
                 defineProperty(FilterNameTP);
         }
 
@@ -594,6 +539,29 @@ bool QHYCCD::updateProperties()
             defineProperty(&USBTrafficNP);
         }
 
+        if (HasCAA)
+        {
+            double min = 0, max = 0, step = 0;
+            if (!isSimulation())
+            {
+                int ret = GetQHYCCDParamMinMaxStep(m_CameraHandle, CONTROL_CAA_ROTATOR, &min, &max, &step);
+                if (ret == QHYCCD_SUCCESS)
+                {
+                    // Allow negative angle for reverse rotation
+                    CAARotatorN[0].min  = (min <= 0 ? min : -360);
+                    CAARotatorN[0].max  = max;
+                    CAARotatorN[0].step = (step > 0 ? step : 0.1);
+                }
+                CAARotatorN[0].value = GetQHYCCDParam(m_CameraHandle, CONTROL_CAA_ROTATOR);
+            }
+            defineProperty(&CAARotatorNP);
+            LOG_INFO("CAA Rotator: supported, control panel enabled");
+        }
+        else
+        {
+            LOG_INFO("CAA Rotator (control 95): not supported");
+        }
+
         defineProperty(&USBBufferNP);
 
         defineProperty(&SDKVersionTP);
@@ -674,6 +642,9 @@ bool QHYCCD::updateProperties()
 
         if (HasUSBTraffic)
             deleteProperty(USBTrafficNP.name);
+
+        if (HasCAA)
+            deleteProperty(CAARotatorNP.name);
 
         deleteProperty(USBBufferNP.name);
 
@@ -972,6 +943,13 @@ bool QHYCCD::Connect()
                 if (m_MaxFilterCount > 0)
                 {
                     HasFilters = true;
+                    char currentPos[MAXINDINAME] = {0};
+                    if (GetQHYCCDCFWStatus(m_CameraHandle, currentPos) == QHYCCD_SUCCESS)
+                    {
+                        CurrentFilter = strtol(currentPos, nullptr, 16) + 1;
+                        FilterSlotNP[0].setValue(CurrentFilter);
+                    }
+
                     updateFilterProperties();
                     LOGF_INFO("Filter Count (CONTROL_CFWSLOTSNUM): %d", m_MaxFilterCount);
                 }
@@ -1024,26 +1002,26 @@ bool QHYCCD::Connect()
         {
             if (ret == BAYER_GB)
             {
-                IUSaveText(&BayerT[2], "GBRG");
+                BayerTP[2].setText("GBRG");
                 cap |= CCD_HAS_BAYER;
             }
             else if (ret == BAYER_GR)
             {
-                IUSaveText(&BayerT[2], "GRBG");
+                BayerTP[2].setText("GRBG");
                 cap |= CCD_HAS_BAYER;
             }
             else if (ret == BAYER_BG)
             {
-                IUSaveText(&BayerT[2], "BGGR");
+                BayerTP[2].setText("BGGR");
                 cap |= CCD_HAS_BAYER;
             }
             else if (ret == BAYER_RG)
             {
-                IUSaveText(&BayerT[2], "RGGB");
+                BayerTP[2].setText("RGGB");
                 cap |= CCD_HAS_BAYER;
             }
 
-            LOGF_DEBUG("Color camera: %s", BayerT[2].text);
+            LOGF_DEBUG("Color camera: %s", BayerTP[2].getText());
         }
 
         ////////////////////////////////////////////////////////////////////
@@ -1094,6 +1072,17 @@ bool QHYCCD::Connect()
         }
 
         LOGF_INFO("Humidity Support: %s", HasHumidity ? "True" : "False");
+
+        ////////////////////////////////////////////////////////////////////
+        /// CAA Rotator Support (CONTROL_CAA_ROTATOR = 95)
+        ////////////////////////////////////////////////////////////////////
+        ret = IsQHYCCDControlAvailable(m_CameraHandle, CONTROL_CAA_ROTATOR);
+        if (ret == QHYCCD_SUCCESS)
+        {
+            HasCAA = true;
+        }
+        LOGF_INFO("CAA Rotator (control 95): %s (SDK result=%u)", HasCAA ? "supported" : "not supported", ret);
+
         ////////////////////////////////////////////////////////////////////
         /// Overscan Area Support
         ////////////////////////////////////////////////////////////////////
@@ -1257,17 +1246,17 @@ bool QHYCCD::setupParams()
 int QHYCCD::SetTemperature(double temperature)
 {
     // If there difference, for example, is less than 0.1 degrees, let's immediately return OK.
-    if (fabs(temperature - TemperatureN[0].value) < UPDATE_THRESHOLD)
+    if (fabs(temperature - TemperatureNP[0].getValue()) < UPDATE_THRESHOLD)
         return 1;
 
-    LOGF_DEBUG("Requested temperature is %.f, current temperature is %.f", temperature, TemperatureN[0].value);
+    LOGF_DEBUG("Requested temperature is %.f, current temperature is %.f", temperature, TemperatureNP[0].getValue());
 
     m_TemperatureRequest = temperature;
     m_PWMRequest = -1;
 
     SetQHYCCDParam(m_CameraHandle, CONTROL_COOLER, m_TemperatureRequest);
 
-    setCoolerEnabled(m_TemperatureRequest <= TemperatureN[0].value);
+    setCoolerEnabled(m_TemperatureRequest <= TemperatureNP[0].getValue());
     setCoolerMode(COOLER_AUTOMATIC);
     return 0;
 }
@@ -1577,7 +1566,7 @@ void QHYCCD::TimerHit()
     //        }
     //    }
 
-    if (FilterSlotNP.s == IPS_BUSY)
+    if (FilterSlotNP.getState() == IPS_BUSY)
     {
         char currentPos[MAXINDINAME] = {0};
         int rc = GetQHYCCDCFWStatus(m_CameraHandle, currentPos);
@@ -1598,9 +1587,9 @@ void QHYCCD::TimerHit()
         }
         else if (++m_FilterCheckCounter > 30)
         {
-            FilterSlotNP.s = IPS_ALERT;
+            FilterSlotNP.setState(IPS_ALERT);
             LOG_ERROR("Filter change timed out.");
-            IDSetNumber(&FilterSlotNP, nullptr);
+            FilterSlotNP.apply();
         }
     }
 
@@ -1672,13 +1661,13 @@ bool QHYCCD::ISNewSwitch(const char *dev, const char *name, ISState *states, cha
             {
                 if (HasCoolerAutoMode)
                 {
-                    double targetTemperature = TemperatureN[0].value;
+                    double targetTemperature = TemperatureNP[0].getValue();
                     if (targetTemperature > 0)
                         targetTemperature = 0;
                     if (SetTemperature(targetTemperature) == 0)
                     {
-                        TemperatureNP.s = IPS_BUSY;
-                        IDSetNumber(&TemperatureNP, nullptr);
+                        TemperatureNP.setState(IPS_BUSY);
+                        TemperatureNP.apply();
                     }
                     return true;
                 }
@@ -1703,8 +1692,8 @@ bool QHYCCD::ISNewSwitch(const char *dev, const char *name, ISState *states, cha
                     CoolerSP.s = IPS_IDLE;
                     IDSetSwitch(&CoolerSP, nullptr);
 
-                    TemperatureNP.s = IPS_IDLE;
-                    IDSetNumber(&TemperatureNP, nullptr);
+                    TemperatureNP.setState(IPS_IDLE);
+                    TemperatureNP.apply();
 
                     setCoolerMode(COOLER_MANUAL);
                     LOG_INFO("Camera is warming up.");
@@ -1714,8 +1703,8 @@ bool QHYCCD::ISNewSwitch(const char *dev, const char *name, ISState *states, cha
                     // Warm up the camera in auto mode
                     if (SetTemperature(30) == 0)
                     {
-                        TemperatureNP.s = IPS_IDLE;
-                        IDSetNumber(&TemperatureNP, nullptr);
+                        TemperatureNP.setState(IPS_IDLE);
+                        TemperatureNP.apply();
                     }
                     LOG_INFO("Camera is warming up.");
                     return true;
@@ -1895,11 +1884,9 @@ bool QHYCCD::ISNewText(const char *dev, const char *name, char *texts[], char *n
     {
         //  This is for our device
         //  Now lets see if it's something we process here
-        if (strcmp(name, FilterNameTP->name) == 0)
-        {
-            INDI::FilterInterface::processText(dev, name, texts, names, n);
+        if (INDI::FilterInterface::processText(dev, name, texts, names, n))
             return true;
-        }
+
     }
 
     return INDI::CCD::ISNewText(dev, name, texts, names, n);
@@ -1910,10 +1897,8 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
     //  first check if it's for our device
     if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
     {
-        if (!strcmp(name, FilterSlotNP.name))
-        {
-            return INDI::FilterInterface::processNumber(dev, name, values, names, n);
-        }
+        if (INDI::FilterInterface::processNumber(dev, name, values, names, n))
+            return true;
 
         //////////////////////////////////////////////////////////////////////
         /// Gain Control
@@ -2027,6 +2012,30 @@ bool QHYCCD::ISNewNumber(const char *dev, const char *name, double values[], cha
             }
 
             IDSetNumber(&USBTrafficNP, nullptr);
+            return true;
+        }
+
+        //////////////////////////////////////////////////////////////////////
+        /// CAA Rotator Control (angle in degrees, negative = reverse)
+        //////////////////////////////////////////////////////////////////////
+        else if (!strcmp(name, CAARotatorNP.name))
+        {
+            double currentAngle = CAARotatorN[0].value;
+            IUUpdateNumber(&CAARotatorNP, values, names, n);
+            int rc = SetQHYCCDParam(m_CameraHandle, CONTROL_CAA_ROTATOR, CAARotatorN[0].value);
+            if (rc == QHYCCD_SUCCESS)
+            {
+                CAARotatorNP.s = IPS_OK;
+                saveConfig(true, CAARotatorNP.name);
+                LOGF_INFO("CAA Rotator angle set to %.2f°", CAARotatorN[0].value);
+            }
+            else
+            {
+                CAARotatorNP.s = IPS_ALERT;
+                CAARotatorN[0].value = currentAngle;
+                LOGF_ERROR("Failed to set CAA Rotator angle: %d", rc);
+            }
+            IDSetNumber(&CAARotatorNP, nullptr);
             return true;
         }
 
@@ -2229,10 +2238,10 @@ void QHYCCD::updateTemperature()
 
     if (isSimulation())
     {
-        currentTemperature = TemperatureN[0].value;
-        if (TemperatureN[0].value < m_TemperatureRequest)
+        currentTemperature = TemperatureNP[0].getValue();
+        if (TemperatureNP[0].getValue() < m_TemperatureRequest)
             currentTemperature += UPDATE_THRESHOLD * 10;
-        else if (TemperatureN[0].value > m_TemperatureRequest)
+        else if (TemperatureNP[0].getValue() > m_TemperatureRequest)
             currentTemperature -= UPDATE_THRESHOLD * 10;
 
         currentCoolingPower = 128;
@@ -2243,7 +2252,7 @@ void QHYCCD::updateTemperature()
         //usleep(1000000);
 
         // Call this function as long as we are busy
-        if (TemperatureNP.s == IPS_BUSY)
+        if (TemperatureNP.getState() == IPS_BUSY)
         {
             SetQHYCCDParam(m_CameraHandle, CONTROL_COOLER, m_TemperatureRequest);
         }
@@ -2253,7 +2262,7 @@ void QHYCCD::updateTemperature()
         }
         // JM 2020-05-18: QHY reported the code below break automatic coolers, so it is only avaiable for manual coolers.
         // Temperature Readout does not work, if we do not set "something", so lets set the current value...
-        else if (CoolerModeS[COOLER_MANUAL].s == ISS_ON && TemperatureNP.s == IPS_OK)
+        else if (CoolerModeS[COOLER_MANUAL].s == ISS_ON && TemperatureNP.getState() == IPS_OK)
         {
             SetQHYCCDParam(m_CameraHandle, CONTROL_MANULPWM, CoolerN[0].value * 255.0 / 100 );
         }
@@ -2263,27 +2272,27 @@ void QHYCCD::updateTemperature()
     }
 
     // Only update if above update threshold
-    if (std::abs(currentTemperature - TemperatureN[0].value) > UPDATE_THRESHOLD)
+    if (std::abs(currentTemperature - TemperatureNP[0].getValue()) > UPDATE_THRESHOLD)
     {
         if (currentTemperature > 100)
-            TemperatureNP.s = IPS_ALERT;
+            TemperatureNP.setState(IPS_ALERT);
         else
-            TemperatureN[0].value = currentTemperature;
-        IDSetNumber(&TemperatureNP, nullptr);
+            TemperatureNP[0].setValue(currentTemperature);
+        TemperatureNP.apply();
 
         LOGF_DEBUG("CCD T.: %.f (C)", currentTemperature);
     }
     // Restart temperature regulation if needed.
-    else if (TemperatureNP.s == IPS_OK && fabs(TemperatureN[0].value - m_TemperatureRequest) > UPDATE_THRESHOLD)
+    else if (TemperatureNP.getState() == IPS_OK && fabs(TemperatureNP[0].getValue() - m_TemperatureRequest) > UPDATE_THRESHOLD)
     {
         if (currentTemperature > 100)
-            TemperatureNP.s       = IPS_ALERT;
+            TemperatureNP.setState(IPS_ALERT);
         else
         {
-            TemperatureN[0].value = currentTemperature;
-            TemperatureNP.s       = IPS_BUSY;
+            TemperatureNP[0].setValue(currentTemperature);
+            TemperatureNP.setState(IPS_BUSY);
         }
-        IDSetNumber(&TemperatureNP, nullptr);
+        TemperatureNP.apply();
     }
 
     // Update cooling power if needed.
@@ -2347,8 +2356,14 @@ bool QHYCCD::saveConfigItems(FILE *fp)
     if (HasUSBTraffic)
         IUSaveConfigNumber(fp, &USBTrafficNP);
 
+    if (HasCAA)
+        IUSaveConfigNumber(fp, &CAARotatorNP);
+
     if (HasAmpGlow)
         IUSaveConfigSwitch(fp, &AMPGlowSP);
+
+    if (HasOverscanArea)
+        IUSaveConfigSwitch(fp, &OverscanAreaSP);
 
     if (HasGPS)
     {
@@ -2441,8 +2456,8 @@ bool QHYCCD::StartStreaming()
     LOGF_DEBUG("SetQHYCCDResolution x: %d y: %d w: %d h: %d", subX, subY, subW, subH, ret);
 
     INDI_PIXEL_FORMAT qhyFormat = INDI_MONO;
-    if (BayerT[2].text && formats.count(BayerT[2].text) != 0)
-        qhyFormat = formats.at(BayerT[2].text);
+    if (BayerTP[2].getText() && formats.count(BayerTP[2].getText()) != 0)
+        qhyFormat = formats.at(BayerTP[2].getText());
 
     double uSecs = static_cast<long>(m_ExposureRequest * 950000.0);
 
@@ -2593,10 +2608,15 @@ void QHYCCD::streamVideo()
         guard.unlock();
         if (ret == QHYCCD_SUCCESS)
         {
-            Streamer->newFrame(buffer, w * h * bpp / 8 * channels);
-
+            uint64_t timestamp = 0;
             if (HasGPS && GPSControlS[INDI_ENABLED].s == ISS_ON)
+            {
                 decodeGPSHeader();
+                timestamp = (uint64_t)GPSHeader.start_sec * 1e6;
+                timestamp += GPSHeader.start_us + QHY_SER_US_EPOCH;
+            }
+
+            Streamer->newFrame(buffer, w * h * bpp / 8 * channels, timestamp);
 
             //DEBUG
             //if(!frames)
@@ -2672,11 +2692,17 @@ void QHYCCD::logQHYMessages(const std::string &message)
     LOGF_DEBUG("%s", message.c_str());
 }
 
+void QHYCCD::nicknameSet(const char *nickname)
+{
+    saveNicknameId(nickname, m_CamID);
+}
+
 void QHYCCD::debugTriggered(bool enable)
 {
     // For some reason QHYSDK does not define this for MacOS! Needs to be fixed
 #ifdef __linux__
-    SetQHYCCDLogFunction(m_QHYLogCallback);
+    // JM QHY removed this function on 2023.07.16
+    //SetQHYCCDLogFunction(m_QHYLogCallback);
 #endif
     if (enable)
         SetQHYCCDLogLevel(5);
@@ -2686,36 +2712,36 @@ void QHYCCD::debugTriggered(bool enable)
 
 bool QHYCCD::updateFilterProperties()
 {
-    if (FilterNameTP->ntp != m_MaxFilterCount)
+    if (FilterNameTP.size() != static_cast<size_t>(m_MaxFilterCount))
     {
         LOGF_DEBUG("Max filter count is: %d", m_MaxFilterCount);
-        FilterSlotN[0].max = m_MaxFilterCount;
+        FilterSlotNP[0].setMax(m_MaxFilterCount);
+
         char filterName[MAXINDINAME];
         char filterLabel[MAXINDILABEL];
-        if (FilterNameT != nullptr)
-        {
-            for (int i = 0; i < FilterNameTP->ntp; i++)
-                free(FilterNameT[i].text);
-            delete [] FilterNameT;
-        }
 
-        FilterNameT = new IText[m_MaxFilterCount];
-        memset(FilterNameT, 0, sizeof(IText) * m_MaxFilterCount);
+        FilterNameTP.resize(0);
+
         for (int i = 0; i < m_MaxFilterCount; i++)
         {
             snprintf(filterName, MAXINDINAME, "FILTER_SLOT_NAME_%d", i + 1);
             snprintf(filterLabel, MAXINDILABEL, "Filter#%d", i + 1);
-            IUFillText(&FilterNameT[i], filterName, filterLabel, filterLabel);
+
+            INDI::WidgetText oneText;
+            oneText.fill(filterName, filterLabel, filterLabel);
+            FilterNameTP.push(std::move(oneText));
         }
-        IUFillTextVector(FilterNameTP, FilterNameT, m_MaxFilterCount, m_defaultDevice->getDeviceName(), "FILTER_NAME", "Filter",
-                         FilterSlotNP.group, IP_RW, 0, IPS_IDLE);
+
+        FilterNameTP.fill(getDeviceName(), "FILTER_NAME", "Filter",
+                          FilterSlotNP.getGroupName(), IP_RW, 0, IPS_IDLE);
+        FilterNameTP.shrink_to_fit();
 
         // Try to load config filter labels
         for (int i = 0; i < m_MaxFilterCount; i++)
         {
             char oneFilter[MAXINDINAME] = {0};
-            if (IUGetConfigText(getDeviceName(), FilterNameTP->name, FilterNameT[i].name, oneFilter, MAXINDINAME) == 0)
-                IUSaveText(&FilterNameT[i], oneFilter);
+            if (IUGetConfigText(getDeviceName(), FilterNameTP.getName(), FilterNameTP[i].getName(), oneFilter, MAXINDINAME) == 0)
+                FilterNameTP[i].setText(oneFilter);
         }
 
         return true;
@@ -2724,86 +2750,84 @@ bool QHYCCD::updateFilterProperties()
     return false;
 }
 
-void QHYCCD::addFITSKeywords(INDI::CCDChip *targetChip)
+void QHYCCD::addFITSKeywords(INDI::CCDChip *targetChip, std::vector<INDI::FITSRecord> &fitsKeywords)
 {
-    INDI::CCD::addFITSKeywords(targetChip);
-    int status = 0;
-    auto fptr = *targetChip->fitsFilePointer();
+    INDI::CCD::addFITSKeywords(targetChip, fitsKeywords);
 
     if (HasGain)
     {
-        fits_update_key_dbl(fptr, "Gain", GainN[0].value, 3, "Gain", &status);
+        fitsKeywords.push_back({"GAIN", GainN[0].value, 3, "Gain"});
     }
 
     if (HasOffset)
     {
-        fits_update_key_dbl(fptr, "Offset", OffsetN[0].value, 3, "Offset", &status);
+        fitsKeywords.push_back({"OFFSET", OffsetN[0].value, 3, "Offset"});
     }
 
     if (HasAmpGlow)
     {
-        fits_update_key_str(fptr, "Ampglow", IUFindOnSwitch(&AMPGlowSP)->label, "Mode", &status);
+        fitsKeywords.push_back({"AMPGLOW", IUFindOnSwitch(&AMPGlowSP)->label, "Mode"});
     }
 
     if (HasReadMode)
     {
-        fits_update_key_dbl(fptr, "ReadMode", ReadModeN[0].value, 1, "Read Mode", &status);
+        fitsKeywords.push_back({"READMODE", ReadModeN[0].value, 1, "Read Mode"});
     }
 
     if (HasGPS)
     {
         // #1 Start
         // ## Flag
-        fits_update_key_dbl(fptr, "GPS_SFlg", GPSHeader.start_flag, 0, "StartFlag", &status);
+        fitsKeywords.push_back({"GPS_SFLG", GPSHeader.start_flag, "StartFlag"});
         // ## Seconds
-        fits_update_key_lng(fptr, "GPS_SS", GPSHeader.start_sec, "StartShutterSeconds", &status);
+        fitsKeywords.push_back({"GPS_SS", GPSHeader.start_sec, "StartShutterSeconds"});
         // ## Microseconds
-        fits_update_key_dbl(fptr, "GPS_SU", GPSHeader.start_us, 3, "StartShutterMicroSeconds", &status);
+        fitsKeywords.push_back({"GPS_SU", GPSHeader.start_us, 3, "StartShutterMicroSeconds"});
         // ## Time
-        fits_update_key_str(fptr, "GPS_ST", GPSDataStartT[GPS_DATA_START_TS].text, "StartShutterTime", &status);
+        fitsKeywords.push_back({"GPS_ST", GPSDataStartT[GPS_DATA_START_TS].text, "StartShutterTime"});
 
         // #2 End
         // ## Flag
-        fits_update_key_dbl(fptr, "GPS_EFlg", GPSHeader.end_flag, 0, "EndFlag", &status);
+        fitsKeywords.push_back({"GPS_EFLG", GPSHeader.end_flag, "EndFlag"});
         // ## Seconds
-        fits_update_key_lng(fptr, "GPS_ES", GPSHeader.end_sec, "EndShutterSeconds", &status);
+        fitsKeywords.push_back({"GPS_ES", GPSHeader.end_sec, "EndShutterSeconds"});
         // ## Microseconds
-        fits_update_key_dbl(fptr, "GPS_EU", GPSHeader.end_us, 3, "EndShutterMicroSeconds", &status);
+        fitsKeywords.push_back({"GPS_EU", GPSHeader.end_us, 3, "EndShutterMicroSeconds"});
         // ## Time
-        fits_update_key_str(fptr, "GPS_ET", GPSDataStartT[GPS_DATA_END_TS].text, "EndShutterTime", &status);
+        fitsKeywords.push_back({"GPS_ET", GPSDataStartT[GPS_DATA_END_TS].text, "EndShutterTime"});
 
         // #3 Now
         // ## Flag
-        fits_update_key_dbl(fptr, "GPS_NFlg", GPSHeader.now_flag, 0, "NowFlag", &status);
+        fitsKeywords.push_back({"GPS_NFLG", GPSHeader.now_flag, "NowFlag"});
         // ## Seconds
-        fits_update_key_lng(fptr, "GPS_NS", GPSHeader.now_sec, "NowShutterSeconds", &status);
+        fitsKeywords.push_back({"GPS_NS", GPSHeader.now_sec, "NowShutterSeconds"});
         // ## Microseconds
-        fits_update_key_dbl(fptr, "GPS_NU", GPSHeader.now_us, 3, "NowShutterMicroSeconds", &status);
+        fitsKeywords.push_back({"GPS_NU", GPSHeader.now_us, 3, "NowShutterMicroSeconds"});
         // ## Time
-        fits_update_key_str(fptr, "GPS_NT", GPSDataStartT[GPS_DATA_NOW_TS].text, "NowShutterTime", &status);
+        fitsKeywords.push_back({"GPS_NT", GPSDataStartT[GPS_DATA_NOW_TS].text, "NowShutterTime"});
 
         // PPS Counter
-        fits_update_key_lng(fptr, "GPS_PPSC", GPSHeader.max_clock, "PPSCounter", &status);
+        fitsKeywords.push_back({"GPS_PPSC", GPSHeader.max_clock, "PPSCounter"});
 
         // GPS Status
 
         // System Clock Offset
-        //fits_update_key_dbl(fptr, "GPS_DSYS", GPSHeader.now_us, 6, "System Clock - GPS Clock Offset (s)", &status);
+        //fitsKeywords.push_back({"GPS_DSYS", GPSHeader.now_us, 6, "System Clock - GPS Clock Offset (s)"});
 
         // Time Offset Stable for
-        //fits_update_key_lng(fptr, "GPS_DSTB", GPSHeader.max_clock, "Time Offset Stable for (s)", &status);
+        //fitsKeywords.push_back({"GPS_DSTB", GPSHeader.max_clock, "Time Offset Stable for (s)"});
 
         // Longitude
-        fits_update_key_dbl(fptr, "GPS_LONG", GPSHeader.longitude, 3, "GPS Longitude", &status);
+        fitsKeywords.push_back({"GPS_LONG", GPSHeader.longitude, 7, "GPS Longitude"});
 
         // Latitude
-        fits_update_key_dbl(fptr, "GPS_LAT", GPSHeader.latitude, 3, "GPS Latitude", &status);
+        fitsKeywords.push_back({"GPS_LAT", GPSHeader.latitude, 7, "GPS Latitude"});
 
         // Sequence Number
-        fits_update_key_lng(fptr, "GPS_Seq", GPSHeader.seqNumber, "Sequence Number", &status);
+        fitsKeywords.push_back({"GPS_SEQ", GPSHeader.seqNumber, "Sequence Number"});
 
         // Temperorary Sequence Number
-        fits_update_key_lng(fptr, "GPS_Tmp", GPSHeader.tempNumber, "Temporary Sequence Number", &status);
+        fitsKeywords.push_back({"GPS_TMP", GPSHeader.tempNumber, "Temporary Sequence Number"});
     }
 
 }
@@ -2843,13 +2867,21 @@ void QHYCCD::decodeGPSHeader()
     IUSaveText(&GPSDataHeaderT[GPS_DATA_HEIGHT], data);
 
     // Latitude
-    GPSHeader.latitude = gpsarray[9] << 24 | gpsarray[10] << 16 | gpsarray[11] << 8 | gpsarray[12];
-    snprintf(data, 64, "%u", GPSHeader.latitude);
+    uint32_t latitude = gpsarray[9] << 24 | gpsarray[10] << 16 | gpsarray[11] << 8 | gpsarray[12];
+    // convert SDDMMMMMMM to DD.DDDDDDD
+    GPSHeader.latitude = (latitude % 1000000000) / 10000000;
+    GPSHeader.latitude += (latitude % 10000000) / 6000000.0;
+    GPSHeader.latitude *= latitude > 1000000000 ? -1.0 : 1.0;
+    snprintf(data, 64, "%f", GPSHeader.latitude);
     IUSaveText(&GPSDataHeaderT[GPS_DATA_LATITUDE], data);
 
     // Longitude
-    GPSHeader.longitude = gpsarray[13] << 24 | gpsarray[14] << 16 | gpsarray[15] << 8 | gpsarray[16];
-    snprintf(data, 64, "%u", GPSHeader.longitude);
+    uint32_t longitude = gpsarray[13] << 24 | gpsarray[14] << 16 | gpsarray[15] << 8 | gpsarray[16];
+    // convert SDDDMMMMMM to DDD.DDDDDDD
+    GPSHeader.longitude = (longitude % 1000000000) / 1000000;
+    GPSHeader.longitude += (longitude % 1000000) / 600000.0;
+    GPSHeader.longitude *= longitude > 1000000000 ? -1.0 : 1.0;
+    snprintf(data, 64, "%f", GPSHeader.longitude);
     IUSaveText(&GPSDataHeaderT[GPS_DATA_LONGITUDE], data);
 
     // Start Flag

@@ -1,6 +1,6 @@
 %define __cmake_in_source_build %{_vpath_builddir}
 Name: libfishcamp
-Version:2.0.0.git
+Version:2.1.3.git
 Release: %(date -u +%%Y%%m%%d%%H%%M%%S)%{?dist}
 Summary: Instrument Neutral Distributed Interface 3rd party drivers
 
@@ -53,7 +53,7 @@ and scalable. It supports common DCS functions such as remote control,
 data acquisition, monitoring, and a lot more. This is a 3rd party driver.
 
 
-%prep -v
+%prep
 %autosetup -v -p1 -n indi-3rdparty-master
 
 %build
@@ -74,9 +74,9 @@ make DESTDIR=%{buildroot} install
 %files
 %{_libdir}/*
 %{_includedir}/libfishcamp
-/lib/firmware/Guider_mono_rev16_intel.srec
-/lib/firmware/gdr_usb.hex
-/lib/udev/rules.d/99-fishcamp.rules
+/usr/lib/firmware/Guider_mono_rev16_intel.srec
+/usr/lib/firmware/gdr_usb.hex
+/usr/lib/udev/rules.d/99-fishcamp.rules
 
 %changelog
 * Sun Jul 19 2020 Jim Howard <jh.xsnrg+fedora@gmail.com> 1.8.7.git-1

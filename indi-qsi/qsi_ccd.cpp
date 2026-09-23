@@ -99,8 +99,8 @@ QSICCD::QSICCD() : FilterInterface(this)
     canChangeReadoutSpeed = false;
 
     // Initial setting. Updated after connction to camera.
-    FilterSlotN[0].min = 1;
-    FilterSlotN[0].max = 5;
+    FilterSlotNP[0].setMin(1);
+    FilterSlotNP[0].setMax(5);
 
     QSICam.put_UseStructuredExceptions(true);
 
@@ -246,8 +246,8 @@ bool QSICCD::setupParams()
 
     LOGF_INFO("The CCD Temperature is %f.", temperature);
 
-    TemperatureN[0].value = temperature; /* CCD chip temperatre (degrees C) */
-    IDSetNumber(&TemperatureNP, nullptr);
+    TemperatureNP[0].setValue(temperature); /* CCD chip temperatre (degrees C) */
+    TemperatureNP.apply();
 
     SetCCDParams(sub_frame_x, sub_frame_y, 16, pixel_size_x, pixel_size_y);
 
@@ -275,9 +275,9 @@ bool QSICCD::setupParams()
         QSICam.get_FilterCount(filterCount);
         LOGF_INFO("The filter count is %d", filterCount);
 
-        FilterSlotN[0].min = 1;
-        FilterSlotN[0].max = filterCount;
-        FilterSlotNP.s     = IPS_OK;
+        FilterSlotNP[0].setMin(1);
+        FilterSlotNP[0].setMax(filterCount);
+        FilterSlotNP.setState(IPS_OK);
     }
     catch (std::runtime_error &err)
     {
@@ -467,7 +467,7 @@ int QSICCD::SetTemperature(double temperature)
     targetTemperature = temperature;
 
     // If less than 0.1 of a degree, let's just return OK
-    if (fabs(temperature - TemperatureN[0].value) < 0.1)
+    if (fabs(temperature - TemperatureNP[0].getValue()) < 0.1)
         return 1;
 
     activateCooler(true);
@@ -675,11 +675,9 @@ bool QSICCD::ISNewText(const char *dev, const char *name, char *texts[], char *n
 
     if (strcmp(dev, getDeviceName()) == 0)
     {
-        if (strcmp(name, FilterNameTP->name) == 0)
-        {
-            INDI::FilterInterface::processText(dev, name, texts, names, n);
+        if (INDI::FilterInterface::processText(dev, name, texts, names, n))
             return true;
-        }
+
     }
 
     return INDI::CCD::ISNewText(dev, name, texts, names, n);
@@ -689,11 +687,9 @@ bool QSICCD::ISNewNumber(const char *dev, const char *name, double values[], cha
 {
     if (strcmp(dev, getDeviceName()) == 0)
     {
-        if (strcmp(name, FilterSlotNP.name) == 0)
-        {
-            INDI::FilterInterface::processNumber(dev, name, values, names, n);
+        if (INDI::FilterInterface::processNumber(dev, name, values, names, n))
             return true;
-        }
+
     }
 
     //  if we didn't process it, continue up the chain, let somebody else
@@ -910,12 +906,10 @@ int QSICCD::grabImage()
     return 0;
 }
 
-void QSICCD::addFITSKeywords(INDI::CCDChip *targetChip)
+void QSICCD::addFITSKeywords(INDI::CCDChip *targetChip, std::vector<INDI::FITSRecord> &fitsKeywords)
 {
-    INDI::CCD::addFITSKeywords(targetChip);
+    INDI::CCD::addFITSKeywords(targetChip, fitsKeywords);
 
-    auto fptr = *targetChip->fitsFilePointer();
-    int status = 0;
     double electronsPerADU;
 
     try
@@ -932,7 +926,7 @@ void QSICCD::addFITSKeywords(INDI::CCDChip *targetChip)
     if (IUFindOnSwitchIndex(&GainSP) == GAIN_AUTO && PrimaryCCD.getBinX() > 1)
         electronsPerADU = 1.1;
 
-    fits_update_key_s(fptr, TDOUBLE, "EPERADU", &electronsPerADU, "Electrons per ADU", &status);
+    fitsKeywords.push_back({"EPERADU", electronsPerADU, 3, "Electrons per ADU"});
 }
 
 bool QSICCD::manageDefaults()
@@ -1017,11 +1011,7 @@ bool QSICCD::Connect()
         return false;
     }
 
-#ifdef HAVE_WEBSOCKET
-    uint32_t cap = CCD_CAN_BIN | CCD_CAN_SUBFRAME | CCD_HAS_COOLER | CCD_HAS_SHUTTER | CCD_HAS_WEB_SOCKET;
-#else
     uint32_t cap = CCD_CAN_BIN | CCD_CAN_SUBFRAME | CCD_HAS_COOLER | CCD_HAS_SHUTTER;
-#endif
 
     if (canAbort)
         cap |= CCD_CAN_ABORT;
@@ -1245,7 +1235,7 @@ void QSICCD::TimerHit()
         }
     }
 
-    switch (TemperatureNP.s)
+    switch (TemperatureNP.getState())
     {
         case IPS_IDLE:
         case IPS_OK:
@@ -1255,36 +1245,38 @@ void QSICCD::TimerHit()
             }
             catch (std::runtime_error &err)
             {
-                TemperatureNP.s = IPS_IDLE;
+                TemperatureNP.setState(IPS_IDLE);
                 LOGF_ERROR("get_CCDTemperature() failed. %s.", err.what());
-                IDSetNumber(&TemperatureNP, nullptr);
+                TemperatureNP.apply();
                 return;
             }
 
-            if (fabs(TemperatureN[0].value - ccdTemp) >= TEMP_THRESHOLD)
+            if (fabs(TemperatureNP[0].getValue() - ccdTemp) >= TEMP_THRESHOLD)
             {
-                TemperatureN[0].value = ccdTemp;
-                IDSetNumber(&TemperatureNP, nullptr);
+                TemperatureNP[0].setValue(ccdTemp);
+                TemperatureNP.apply();
             }
             break;
 
         case IPS_BUSY:
             try
             {
-                QSICam.get_CCDTemperature(&TemperatureN[0].value);
+                double value = 0;
+                QSICam.get_CCDTemperature(&value);
+                TemperatureNP[0].setValue(value);
             }
             catch (std::runtime_error &err)
             {
-                TemperatureNP.s = IPS_ALERT;
+                TemperatureNP.setState(IPS_ALERT);
                 LOGF_ERROR("get_CCDTemperature() failed. %s.", err.what());
-                IDSetNumber(&TemperatureNP, nullptr);
+                TemperatureNP.apply();
                 return;
             }
 
             //            if (fabs(TemperatureN[0].value - targetTemperature) <= TEMP_THRESHOLD)
             //                TemperatureNP.s = IPS_OK;
 
-            IDSetNumber(&TemperatureNP, nullptr);
+            TemperatureNP.apply();
             break;
 
         case IPS_ALERT:
@@ -1372,7 +1364,7 @@ void QSICCD::turnWheel()
                 return;
             }
 
-            FilterSlotN[0].value = current_filter;
+            FilterSlotNP[0].setValue(current_filter);
             FilterS[0].s         = ISS_OFF;
             FilterS[1].s         = ISS_OFF;
             FilterSP.s           = IPS_OK;
@@ -1399,13 +1391,13 @@ void QSICCD::turnWheel()
                 return;
             }
 
-            FilterSlotN[0].value = current_filter;
+            FilterSlotNP[0].setValue(current_filter);
             FilterS[0].s         = ISS_OFF;
             FilterS[1].s         = ISS_OFF;
             FilterSP.s           = IPS_OK;
             LOGF_DEBUG("The current filter is %d", current_filter);
             IDSetSwitch(&FilterSP, nullptr);
-            IDSetNumber(&FilterSlotNP, nullptr);
+            FilterSlotNP.apply();
             break;
     }
 }
@@ -1475,14 +1467,7 @@ bool QSICCD::GetFilterNames()
     char filterName[MAXINDINAME];
     char filterLabel[MAXINDILABEL];
 
-    if (FilterNameT != nullptr)
-    {
-        for (int i = 0; i < FilterNameTP->ntp; i++)
-            free(FilterNameT[i].text);
-        delete [] FilterNameT;
-        FilterNameT = nullptr;
-    }
-
+    FilterNameTP.resize(0);
     auto* filterDesignation = new std::string[filterCount];
 
     try
@@ -1496,17 +1481,20 @@ bool QSICCD::GetFilterNames()
         return false;
     }
 
-    FilterNameT = new IText[filterCount];
-    memset(FilterNameT, 0, sizeof(IText) * filterCount);
+
 
     for (int i = 0; i < filterCount; i++)
     {
         snprintf(filterName, MAXINDINAME, "FILTER_SLOT_NAME_%d", i + 1);
         snprintf(filterLabel, MAXINDILABEL, "Filter #%d", i + 1);
-        IUFillText(&FilterNameT[i], filterName, filterLabel, filterDesignation[i].c_str());
+
+        INDI::WidgetText oneText;
+        oneText.fill(filterName, filterLabel, filterDesignation[i]);
+        FilterNameTP.push(std::move(oneText));
     }
-    IUFillTextVector(FilterNameTP, FilterNameT, filterCount, getDeviceName(), "FILTER_NAME", "Filter", FilterSlotNP.group,
-                     IP_RW, 1, IPS_IDLE);
+
+    FilterNameTP.fill(getDeviceName(), "FILTER_NAME", "Filter", FilterSlotNP.getGroupName(), IP_RW, 0, IPS_IDLE);
+    FilterNameTP.shrink_to_fit();
     delete [] filterDesignation;
     return true;
 }
@@ -1516,7 +1504,7 @@ bool QSICCD::SetFilterNames()
     auto* filterDesignation = new std::string[filterCount];
 
     for (int i = 0; i < filterCount; i++)
-        filterDesignation[i] = FilterNameT[i].text;
+        filterDesignation[i] = FilterNameTP[i].getText();
 
     try
     {
@@ -1526,12 +1514,12 @@ bool QSICCD::SetFilterNames()
     {
         delete [] filterDesignation;
         LOGF_ERROR("put_Names() failed. %s.", err.what());
-        IDSetText(FilterNameTP, nullptr);
+        FilterNameTP.apply();
         return false;
     }
     delete [] filterDesignation;
 
-    saveConfig(true, FilterNameTP->name);
+    saveConfig(FilterNameTP);
 
     return true;
 }
@@ -1545,7 +1533,6 @@ bool QSICCD::SelectFilter(int targetFilter)
     }
     catch (std::runtime_error &err)
     {
-        FilterSlotNP.s = IPS_ALERT;
         LOGF_ERROR("put_Position() failed. %s.", err.what());
         return false;
     }
@@ -1555,15 +1542,15 @@ bool QSICCD::SelectFilter(int targetFilter)
 
     if (newFilter == targetFilter)
     {
-        FilterSlotN[0].value = targetFilter;
-        FilterSlotNP.s       = IPS_OK;
+        FilterSlotNP[0].setValue(targetFilter);
+        FilterSlotNP.setState(IPS_OK);
         LOGF_DEBUG("Filter set to slot #%d", targetFilter);
-        IDSetNumber(&FilterSlotNP, nullptr);
+        FilterSlotNP.apply();
         return true;
     }
+    FilterSlotNP.setState(IPS_ALERT);
+    FilterSlotNP.apply();
 
-    IDSetNumber(&FilterSlotNP, nullptr);
-    FilterSlotNP.s = IPS_ALERT;
     return false;
 }
 
@@ -1576,9 +1563,9 @@ int QSICCD::QueryFilter()
     }
     catch (std::runtime_error &err)
     {
-        FilterSlotNP.s = IPS_ALERT;
+        FilterSlotNP.setState(IPS_ALERT);
         LOGF_ERROR("get_Position() failed. %s.", err.what());
-        IDSetNumber(&FilterSlotNP, nullptr);
+        FilterSlotNP.apply();
         return -1;
     }
 

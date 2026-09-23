@@ -377,6 +377,11 @@ pslr_handle_t pslr_init( char *model, char *device ) {
     for ( i=0; i<driveNum; ++i ) {
         pslr_result result = get_drive_info( drives[i], &fd, vendorId, sizeof(vendorId), productId, sizeof(productId));
 
+        // If device error, we shouldn't do anything esle with the file descriptor, so skip to next drive
+        if (result == PSLR_DEVICE_ERROR) {
+            continue;
+        }
+        
         DPRINT("\tChecking drive:  %s %s %s\n", drives[i], vendorId, productId);
         if ( find_in_array( valid_vendors, sizeof(valid_vendors)/sizeof(valid_vendors[0]),vendorId) != -1
                 && find_in_array( valid_models, sizeof(valid_models)/sizeof(valid_models[0]), productId) != -1 ) {
@@ -997,7 +1002,6 @@ int pslr_buffer_open(pslr_handle_t h, int bufno, pslr_buffer_type buftype, int b
     DPRINT("[C]\tpslr_buffer_open(#%X, type=%X, res=%X)\n", bufno, buftype, bufres);
     pslr_buffer_segment_info info;
     uint16_t bufs;
-    uint32_t buf_total = 0;
     int i, j;
     int ret;
     int retry = 0;
@@ -1058,7 +1062,6 @@ int pslr_buffer_open(pslr_handle_t h, int bufno, pslr_buffer_type buftype, int b
             j++;
         }
         CHECK(ipslr_next_segment(p));
-        buf_total += info.length;
         i++;
     } while (i < 9 && info.b != 2);
     p->segment_count = j;

@@ -34,6 +34,7 @@ enum AUXCommands
     MC_GET_POSITION      = 0x01,
     MC_GOTO_FAST         = 0x02,
     MC_SET_POSITION      = 0x04,
+    MC_GET_MODEL         = 0x05,
     MC_SET_POS_GUIDERATE = 0x06,
     MC_SET_NEG_GUIDERATE = 0x07,
     MC_LEVEL_START       = 0x0b,
@@ -60,7 +61,10 @@ enum AUXCommands
     GPS_GET_YEAR         = 0x04,
     GPS_GET_TIME         = 0x33,
     GPS_TIME_VALID       = 0x36,
-    GPS_LINKED           = 0x37
+    GPS_LINKED           = 0x37,
+    FOC_GET_HS_POSITIONS = 0x2c,
+    // Evolution commands
+    GET_VOLTAGE          = 0x10
 };
 
 enum AUXTargets
@@ -71,6 +75,7 @@ enum AUXTargets
     HCP   = 0x0d,
     AZM   = 0x10,
     ALT   = 0x11,
+    FOCUS = 0x12,
     APP   = 0x20,
     GPS   = 0xb0,
     WiFi  = 0xb5,

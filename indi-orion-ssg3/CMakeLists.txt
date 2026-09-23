@@ -1,13 +1,15 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.16)
 PROJECT(indi-orion_ssg3 CXX C)
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
 include(GNUInstallDirs)
 
+option(INDI_INSTALL_UDEV_RULES "Install UDEV rules" On)
+
 IF(APPLE)
 ELSE(APPLE)
-set(RULES_INSTALL_DIR "/lib/udev/rules.d")
+set(RULES_INSTALL_DIR "/usr/lib/udev/rules.d")
 ENDIF()
 set (ORION_SSG3_VERSION_MAJOR 0)
 set (ORION_SSG3_VERSION_MINOR 1)
@@ -24,6 +26,7 @@ include_directories( ${CMAKE_CURRENT_BINARY_DIR})
 include_directories( ${CMAKE_CURRENT_SOURCE_DIR})
 include_directories( ${INDI_INCLUDE_DIR})
 include_directories( ${CFITSIO_INCLUDE_DIR})
+include_directories( ${USB1_INCLUDE_DIR})
 
 include(CMakeCommon)
 
@@ -50,7 +53,7 @@ install(TARGETS indi_orion_ssg3_ccd RUNTIME DESTINATION bin )
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_orion_ssg3.xml DESTINATION ${INDI_DATA_DIR})
 
-IF (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+IF (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND INDI_INSTALL_UDEV_RULES)
 install(FILES 99-orionssg3.rules DESTINATION ${RULES_INSTALL_DIR})
 ENDIF()
 

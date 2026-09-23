@@ -1,9 +1,10 @@
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 project (libtoupcam)
 
-# Using ToupCamera SDK Version: 53.22004.20230115
-set (LIBTOUPCAM_VERSION "1.53.2")
-set (LIBTOUPCAM_SOVERSION "1")
+set (LIBTOUPCAM_VERSION "60.32226")
+set (LIBTOUPCAM_SOVERSION "60")
+
+option(INDI_INSTALL_UDEV_RULES "Install UDEV rules" On)
 
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
@@ -18,7 +19,7 @@ if (APPLE)
 
   set_property (TARGET toupcam PROPERTY IMPORTED_LOCATION "mac/libtoupcam.bin")
 
-  FIX_LIBRARY_ID("libtoupcam" "mac/libtoupcam.bin" "TOUPCAM")
+  FIX_MACOS_LIBRARIES("libtoupcam" "mac/libtoupcam.bin" "TOUPCAM")
 
 elseif (UNIX AND NOT WIN32)
 
@@ -29,12 +30,14 @@ elseif (UNIX AND NOT WIN32)
   elseif (CMAKE_SIZEOF_VOID_P MATCHES "8")
     set_property (TARGET toupcam PROPERTY IMPORTED_LOCATION "x64/libtoupcam.bin")
   else ()
-    set_property (TARGET toupcam PROPERTY IMPORTED_LOCATION "x86/libtoupcam.bin")
+    message (FATAL_ERROR "unsupported architecture.")
   endif ()
 
   # Install udev rules
-  set (UDEVRULES_INSTALL_DIR "/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
-  install (FILES 99-toupcam.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  if (INDI_INSTALL_UDEV_RULES)
+    set (UDEVRULES_INSTALL_DIR "/usr/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
+    install (FILES 99-toupcam.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  endif ()
 
 endif ()
 

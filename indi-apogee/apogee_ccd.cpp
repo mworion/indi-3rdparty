@@ -215,8 +215,8 @@ bool ApogeeCCD::getCameraParams()
 
     if (isSimulation())
     {
-        TemperatureN[0].value = 10;
-        IDSetNumber(&TemperatureNP, nullptr);
+        TemperatureNP[0].setValue(10);
+        TemperatureNP.apply();
 
         IUResetSwitch(&FanStatusSP);
         FanStatusS[2].s = ISS_ON;
@@ -273,8 +273,8 @@ bool ApogeeCCD::getCameraParams()
     }
 
     LOGF_INFO("The CCD Temperature is %f.", temperature);
-    TemperatureN[0].value = temperature; /* CCD chip temperatre (degrees C) */
-    IDSetNumber(&TemperatureNP, nullptr);
+    TemperatureNP[0].setValue(temperature); /* CCD chip temperatre (degrees C) */
+    TemperatureNP.apply();
 
     Apg::FanMode fStatus = Apg::FanMode_Unknown;
 
@@ -325,7 +325,7 @@ bool ApogeeCCD::getCameraParams()
 int ApogeeCCD::SetTemperature(double temperature)
 {
     // If less than 0.1 of a degree, let's just return OK
-    if (fabs(temperature - TemperatureN[0].value) < 0.1)
+    if (fabs(temperature - TemperatureNP[0].getValue()) < 0.1)
         return 1;
 
     activateCooler(true);
@@ -453,11 +453,9 @@ bool ApogeeCCD::ISNewText(const char *dev, const char *name, char *texts[], char
 {
     if (strcmp(dev, getDeviceName()) == 0)
     {
-        if (!strcmp(name, FilterNameTP->name))
-        {
-            INDI::FilterInterface::processText(dev, name, texts, names, n);
+        if (INDI::FilterInterface::processText(dev, name, texts, names, n))
             return true;
-        }
+
 
         if (!strcmp(NetworkInfoTP.name, name))
         {
@@ -495,11 +493,9 @@ bool ApogeeCCD::ISNewNumber(const char *dev, const char *name, double values[], 
 {
     if(!strcmp(dev, getDeviceName()))
     {
-        if (!strcmp(name, FilterSlotNP.name))
-        {
-            INDI::FilterInterface::processNumber(dev, name, values, names, n);
+        if (INDI::FilterInterface::processNumber(dev, name, values, names, n))
             return true;
-        }
+
     }
 
     return INDI::CCD::ISNewNumber(dev, name, values, names, n);
@@ -1169,12 +1165,12 @@ bool ApogeeCCD::Connect()
     }
 
     if (isSimulation())
-        FilterSlotN[0].max = 5;
+        FilterSlotNP[0].setMax(5);
     else
     {
         try
         {
-            FilterSlotN[0].max = ApgCFW->GetMaxPositions();
+            FilterSlotNP[0].setMax(ApgCFW->GetMaxPositions());
         }
         catch(std::runtime_error &err)
         {
@@ -1299,7 +1295,7 @@ void ApogeeCCD::TimerHit()
         }
     }
 
-    switch (TemperatureNP.s)
+    switch (TemperatureNP.getState())
     {
         case IPS_IDLE:
         case IPS_OK:
@@ -1307,22 +1303,22 @@ void ApogeeCCD::TimerHit()
             try
             {
                 if (isSimulation())
-                    ccdTemp = TemperatureN[0].value;
+                    ccdTemp = TemperatureNP[0].getValue();
                 else
                     ccdTemp = ApgCam->GetTempCcd();
             }
             catch (std::runtime_error &err)
             {
-                TemperatureNP.s = IPS_IDLE;
+                TemperatureNP.setState(IPS_IDLE);
                 LOGF_ERROR("GetTempCcd failed. %s.", err.what());
-                IDSetNumber(&TemperatureNP, nullptr);
+                TemperatureNP.apply();
                 return;
             }
 
-            if (fabs(TemperatureN[0].value - ccdTemp) >= TEMP_UPDATE_THRESHOLD)
+            if (fabs(TemperatureNP[0].getValue() - ccdTemp) >= TEMP_UPDATE_THRESHOLD)
             {
-                TemperatureN[0].value = ccdTemp;
-                IDSetNumber(&TemperatureNP, nullptr);
+                TemperatureNP[0].setValue(ccdTemp);
+                TemperatureNP.apply();
             }
             break;
 
@@ -1331,23 +1327,23 @@ void ApogeeCCD::TimerHit()
             try
             {
                 if (isSimulation())
-                    ccdTemp = TemperatureN[0].value;
+                    ccdTemp = TemperatureNP[0].getValue();
                 else
                     ccdTemp = ApgCam->GetTempCcd();
             }
             catch (std::runtime_error &err)
             {
-                TemperatureNP.s = IPS_ALERT;
+                TemperatureNP.setState(IPS_ALERT);
                 LOGF_ERROR("GetTempCcd failed. %s.", err.what());
-                IDSetNumber(&TemperatureNP, nullptr);
+                TemperatureNP.apply();
                 return;
             }
 
             //            if (fabs(TemperatureN[0].value - ccdTemp) <= TEMP_THRESHOLD)
             //                TemperatureNP.s = IPS_OK;
 
-            TemperatureN[0].value = ccdTemp;
-            IDSetNumber(&TemperatureNP, nullptr);
+            TemperatureNP[0].setValue(ccdTemp);
+            TemperatureNP.apply();
             break;
 
         case IPS_ALERT:
@@ -1417,7 +1413,7 @@ void ApogeeCCD::TimerHit()
             break;
     }
 
-    if (FilterSlotNP.s == IPS_BUSY)
+    if (FilterSlotNP.getState() == IPS_BUSY)
     {
         try
         {
@@ -1431,8 +1427,8 @@ void ApogeeCCD::TimerHit()
         catch (std::runtime_error &err)
         {
             LOGF_ERROR("Failed to get CFW status: %s", err.what());
-            FilterSlotNP.s = IPS_ALERT;
-            IDSetNumber(&FilterSlotNP, nullptr);
+            FilterSlotNP.setState(IPS_ALERT);
+            FilterSlotNP.apply();
         }
     }
 
@@ -1473,8 +1469,8 @@ int ApogeeCCD::QueryFilter()
     catch (std::runtime_error &err)
     {
         LOGF_ERROR("Failed to query filter: %s", err.what());
-        FilterSlotNP.s = IPS_ALERT;
-        IDSetNumber(&FilterSlotNP, nullptr);
+        FilterSlotNP.setState(IPS_ALERT);
+        FilterSlotNP.apply();
         return -1;
     }
 
@@ -1490,8 +1486,8 @@ bool ApogeeCCD::SelectFilter(int position)
     catch (std::runtime_error &err)
     {
         LOGF_ERROR("Failed to set filter: %s", err.what());
-        FilterSlotNP.s = IPS_ALERT;
-        IDSetNumber(&FilterSlotNP, nullptr);
+        FilterSlotNP.setState(IPS_ALERT);
+        FilterSlotNP.apply();
         return false;
     }
 

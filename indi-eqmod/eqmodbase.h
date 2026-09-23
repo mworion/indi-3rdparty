@@ -30,6 +30,8 @@
 #include <inditelescope.h>
 #include <indiguiderinterface.h>
 
+#include <memory>
+
 #include <libnova/ln_types.h>
 
 typedef struct SyncData
@@ -53,7 +55,7 @@ class EQMod : public INDI::Telescope, public INDI::GuiderInterface
 {
     protected:
         //  private:
-        Skywatcher *mount;
+        std::unique_ptr<Skywatcher> mount;
 
         uint32_t currentRAEncoder, zeroRAEncoder, totalRAEncoder;
         uint32_t currentDEEncoder, zeroDEEncoder, totalDEEncoder;
@@ -69,7 +71,7 @@ class EQMod : public INDI::Telescope, public INDI::GuiderInterface
         double targetDEC;
 
 #ifdef WITH_ALIGN_GEEHALEL
-        Align *align;
+        std::unique_ptr<Align> align;
 #endif
 
         int last_motion_ns;
@@ -88,52 +90,51 @@ class EQMod : public INDI::Telescope, public INDI::GuiderInterface
         int GuideTimerNS;
         int GuideTimerWE;
 
-        INumber *GuideRateN                        = nullptr;
-        INumberVectorProperty *GuideRateNP         = nullptr;
-        ITextVectorProperty *MountInformationTP    = nullptr;
-        INumberVectorProperty *SteppersNP          = nullptr;
-        INumberVectorProperty *CurrentSteppersNP   = nullptr;
-        INumberVectorProperty *PeriodsNP           = nullptr;
-        INumberVectorProperty *JulianNP            = nullptr;
-        INumberVectorProperty *TimeLSTNP           = nullptr;
-        ILightVectorProperty *RAStatusLP           = nullptr;
-        ILightVectorProperty *DEStatusLP           = nullptr;
-        INumberVectorProperty *SlewSpeedsNP        = nullptr;
-        ISwitchVectorProperty *HemisphereSP        = nullptr;
-        ISwitchVectorProperty *TrackDefaultSP      = nullptr;
-        INumberVectorProperty *HorizontalCoordNP   = nullptr;
-        INumberVectorProperty *StandardSyncNP      = nullptr;
-        INumberVectorProperty *StandardSyncPointNP = nullptr;
-        INumberVectorProperty *SyncPolarAlignNP    = nullptr;
-        ISwitchVectorProperty *SyncManageSP        = nullptr;
-        ISwitchVectorProperty *ReverseDECSP        = nullptr;
-        ISwitchVectorProperty *TargetPierSideSP    = nullptr;
-        INumberVectorProperty *BacklashNP          = nullptr;
-        ISwitchVectorProperty *UseBacklashSP       = nullptr;
-        INumberVectorProperty *LEDBrightnessNP     = nullptr;
+        // INumber *GuideRateN                        = nullptr;
+        INDI::PropertyNumber   GuideRateNP         {INDI::Property()};
+        INDI::PropertyText     MountInformationTP  {INDI::Property()};
+        INDI::PropertyNumber   SteppersNP          {INDI::Property()};
+        INDI::PropertyNumber   CurrentSteppersNP   {INDI::Property()};
+        INDI::PropertyNumber   PeriodsNP           {INDI::Property()};
+        INDI::PropertyNumber   JulianNP            {INDI::Property()};
+        INDI::PropertyNumber   TimeLSTNP           {INDI::Property()};
+        INDI::PropertyLight    RAStatusLP          {INDI::Property()};
+        INDI::PropertyLight    DEStatusLP          {INDI::Property()};
+        INDI::PropertyNumber   SlewSpeedsNP        {INDI::Property()};
+        INDI::PropertySwitch   HemisphereSP        {INDI::Property()};
+        INDI::PropertySwitch   TrackDefaultSP      {INDI::Property()};
+        INDI::PropertyNumber   HorizontalCoordNP   {INDI::Property()};
+        INDI::PropertyNumber   StandardSyncNP      {INDI::Property()};
+        INDI::PropertyNumber   StandardSyncPointNP {INDI::Property()};
+        INDI::PropertyNumber   SyncPolarAlignNP    {INDI::Property()};
+        INDI::PropertySwitch   SyncManageSP        {INDI::Property()};
+        INDI::PropertySwitch   ReverseDECSP        {INDI::Property()};
+        INDI::PropertySwitch   TargetPierSideSP    {INDI::Property()};
+        INDI::PropertyNumber   BacklashNP          {INDI::Property()};
+        INDI::PropertySwitch   UseBacklashSP       {INDI::Property()};
+        INDI::PropertyNumber   LEDBrightnessNP     {INDI::Property()};
 #if defined WITH_ALIGN && defined WITH_ALIGN_GEEHALEL
         ISwitch AlignMethodS[2];
         ISwitchVectorProperty AlignMethodSP;
 #endif
 #if defined WITH_ALIGN || defined WITH_ALIGN_GEEHALEL
-        ISwitchVectorProperty *AlignSyncModeSP = nullptr;
+        INDI::PropertySwitch   AlignSyncModeSP     {INDI::Property()};
 #endif
-        ISwitchVectorProperty *AutoHomeSP   = nullptr;
-        ISwitchVectorProperty *AuxEncoderSP = nullptr;
-        INumberVectorProperty *AuxEncoderNP = nullptr;
+        INDI::PropertySwitch   AuxEncoderSP        {INDI::Property()};
+        INDI::PropertyNumber   AuxEncoderNP        {INDI::Property()};
 
-        ISwitchVectorProperty *ST4GuideRateNSSP = nullptr;
-        ISwitchVectorProperty *ST4GuideRateWESP = nullptr;
+        INDI::PropertySwitch   ST4GuideRateNSSP    {INDI::Property()};
+        INDI::PropertySwitch   ST4GuideRateWESP    {INDI::Property()};
 
-        ISwitchVectorProperty *PPECTrainingSP = nullptr;
-        ISwitchVectorProperty *PPECSP         = nullptr;
+        INDI::PropertySwitch   PPECTrainingSP      {INDI::Property()};
+        INDI::PropertySwitch   PPECSP              {INDI::Property()};
 
-        ISwitchVectorProperty *SNAPPORT1SP      = nullptr;
-        ISwitchVectorProperty *SNAPPORT2SP      = nullptr;
+        INDI::PropertySwitch   SNAPPORT1SP         {INDI::Property()};
+        INDI::PropertySwitch   SNAPPORT2SP         {INDI::Property()};
 
         INumber *MinPulseN                   = nullptr;
         INumber *MinPulseTimerN              = nullptr;
-        INumberVectorProperty *PulseLimitsNP = nullptr;
+        INDI::PropertyNumber   PulseLimitsNP       {INDI::Property()};
 
         enum Hemisphere
         {
@@ -186,6 +187,8 @@ class EQMod : public INDI::Telescope, public INDI::GuiderInterface
 
         bool loadProperties();
 
+        void initSlewRates();
+
         void setStepperSimulation(bool enable);
 
         void computePolarAlign(SyncData s1, SyncData s2, double lat, double *tpaalt, double *tpaaz);
@@ -210,38 +213,40 @@ class EQMod : public INDI::Telescope, public INDI::GuiderInterface
 
     public:
         EQMod();
-        virtual ~EQMod();
+        virtual ~EQMod() = default;
 
-        virtual const char *getDefaultName();
-        virtual bool Handshake();
-        virtual bool Disconnect();
-        virtual void TimerHit();
-        virtual bool ReadScopeStatus();
-        virtual bool initProperties();
-        virtual bool updateProperties();
-        virtual void ISGetProperties(const char *dev);
-        virtual bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n);
-        virtual bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n);
-        virtual bool ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n);
+        virtual const char *getDefaultName() override;
+        virtual bool Handshake() override;
+        virtual bool Disconnect() override;
+        virtual void TimerHit() override;
+        virtual bool ReadScopeStatus() override;
+        virtual bool initProperties() override;
+        virtual bool updateProperties() override;
+        virtual void ISGetProperties(const char *dev) override;
+        virtual bool ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n) override;
+        virtual bool ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n) override;
+        virtual bool ISNewText(const char *dev, const char *name, char *texts[], char *names[], int n) override;
 #ifdef WITH_ALIGN
         virtual bool ISNewBLOB(const char *dev, const char *name, int sizes[], int blobsizes[], char *blobs[],
-                               char *formats[], char *names[], int n);
+                               char *formats[], char *names[], int n) override;
 #endif
-        virtual bool MoveNS(INDI_DIR_NS dir, TelescopeMotionCommand command);
-        virtual bool MoveWE(INDI_DIR_WE dir, TelescopeMotionCommand command);
-        virtual bool Abort();
+        virtual bool MoveNS(INDI_DIR_NS dir, TelescopeMotionCommand command) override;
+        virtual bool MoveWE(INDI_DIR_WE dir, TelescopeMotionCommand command) override;
+        virtual bool Abort() override;
 
-        virtual IPState GuideNorth(uint32_t ms);
-        virtual IPState GuideSouth(uint32_t ms);
-        virtual IPState GuideEast(uint32_t ms);
-        virtual IPState GuideWest(uint32_t ms);
+        virtual IPState GuideNorth(uint32_t ms) override;
+        virtual IPState GuideSouth(uint32_t ms) override;
+        virtual IPState GuideEast(uint32_t ms) override;
+        virtual IPState GuideWest(uint32_t ms) override;
 
-        bool Goto(double ra, double dec);
-        bool Park();
-        bool UnPark();
-        bool SetCurrentPark();
-        bool SetDefaultPark();
-        bool Sync(double ra, double dec);
+        bool Goto(double ra, double dec) override;
+        bool Park() override;
+        bool UnPark() override;
+        bool SetCurrentPark() override;
+        bool SetDefaultPark() override;
+        bool Sync(double ra, double dec) override;
+
+        IPState ExecuteHomeAction(TelescopeHomeAction action) override;
 
         // Call first time EQMod is run
         void saveInitialParkPosition();
@@ -251,31 +256,30 @@ class EQMod : public INDI::Telescope, public INDI::GuiderInterface
         static void abnormalDisconnectCallback(void *userpointer);
 
         // Tracking
-        bool SetTrackMode(uint8_t mode);
-        bool SetTrackRate(double raRate, double deRate);
-        bool SetTrackEnabled(bool enabled);
+        bool SetTrackMode(uint8_t mode) override;
+        bool SetTrackRate(double raRate, double deRate) override;
+        bool SetTrackEnabled(bool enabled) override;
 
-        virtual bool saveConfigItems(FILE *fp);
+        virtual bool saveConfigItems(FILE *fp) override;
 
-        bool updateTime(ln_date *lndate_utc, double utc_offset);
-        bool updateLocation(double latitude, double longitude, double elevation);
+        bool updateTime(ln_date *lndate_utc, double utc_offset) override;
+        bool updateLocation(double latitude, double longitude, double elevation) override;
 
         double getLongitude();
         double getLatitude();
         double getJulianDate();
         double getLst(double jd, double lng);
 
-        EQModSimulator *simulator;
+        std::unique_ptr<EQModSimulator> simulator;
 
 #ifdef WITH_SCOPE_LIMITS
-        HorizonLimits *horizon;
+        std::unique_ptr<HorizonLimits> horizon;
 #endif
         // AutoHoming for EQ8
         static const TelescopeStatus SCOPE_AUTOHOMING = static_cast<TelescopeStatus>(SCOPE_PARKED + 1);
         enum AutoHomeStatus
         {
             AUTO_HOME_IDLE,
-            AUTO_HOME_CONFIRM,
             AUTO_HOME_WAIT_PHASE1,
             AUTO_HOME_WAIT_PHASE2,
             AUTO_HOME_WAIT_PHASE3,
@@ -288,4 +292,6 @@ class EQMod : public INDI::Telescope, public INDI::GuiderInterface
         int DBG_SCOPE_STATUS {0};
         int DBG_COMM {0};
         int DBG_MOUNT {0};
+
+        static constexpr int PARKING_THRESHOLD {10};
 };

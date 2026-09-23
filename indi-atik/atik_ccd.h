@@ -62,7 +62,7 @@ class ATIKCCD : public INDI::CCD, public INDI::FilterInterface
         virtual IPState GuideWest(uint32_t ms) override;
 
         // Atik specific keywords
-        virtual void addFITSKeywords(INDI::CCDChip *targetChip) override;
+        virtual void addFITSKeywords(INDI::CCDChip *targetChip, std::vector<INDI::FITSRecord> &fitsKeywords) override;
 
         // Save config
         virtual bool saveConfigItems(FILE *fp) override;
@@ -163,6 +163,14 @@ class ATIKCCD : public INDI::CCD, public INDI::FilterInterface
             COOLER_ON,
             COOLER_OFF,
         };
+
+        // Gain Control
+        INumberVectorProperty GainNP;
+        INumber GainN[1];
+
+        // Offset Control
+        INumberVectorProperty OffsetNP;
+        INumber OffsetN[1];
 
         // Gain & Offset Custom Properties
         INumber ControlN[2];

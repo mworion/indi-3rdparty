@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 PROJECT(indi_sbig CXX C)
 
 set (SBIG_VERSION_MAJOR 2)
@@ -23,6 +23,7 @@ include_directories( ${CMAKE_CURRENT_SOURCE_DIR})
 include_directories( ${INDI_INCLUDE_DIR})
 include_directories( ${SBIG_INCLUDE_DIR})
 include_directories( ${CFITSIO_INCLUDE_DIR})
+include_directories( ${USB1_INCLUDE_DIR})
 
 include(CMakeCommon)
 

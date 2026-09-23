@@ -1,3 +1,111 @@
+libomegonprocam (60.32226.20260808) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Mon, 10 Aug 2026 08:52:20 +0800
+
+libomegonprocam (60.31631.20260606) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Sun, 07 Jun 2026 13:42:31 +0800
+
+libomegonprocam (59.31026.20260322) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Mon, 23 Mar 2026 10:43:31 +0800
+
+libomegonprocam (59.30594.20260120) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Wed, 21 Jan 2026 12:54:00 +0800
+
+libomegonprocam (59.30281.20251214) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Mon, 15 Dec 2025 08:25:28 +0800
+
+libomegonprocam (59.29465.20250907) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Mon, 08 Sep 2025 09:37:13 +0800
+
+libomegonprocam (59.29176.20250806) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Thu, 07 Aug 2025 12:50:41 +0800
+
+libomegonprocam (59.28981.20250715) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Wed, 16 Jul 2025 15:33:54 +0800
+
+libomegonprocam (57.28200.20250408) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Wed, 09 Apr 2025 10:05:37 +0800
+
+libomegonprocam (57.27591.20250122) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Thu, 23 Jan 2025 13:34:28 +0800
+
+libomegonprocam (57.27591.20250122) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Thu, 23 Jan 2025 13:31:35 +0800
+
+libomegonprocam (57.27348.20241224) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Wed, 25 Dec 2024 15:45:43 +0800
+
+libomegonprocam (57.26598.20240928) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <nimax@nimax.com>  Sun, 29 Sep 2024 13:28:59 +0800
+
+libomegonprocam (56.26054.20240714) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <>  Mon, 15 Jul 2024 09:57:19 +0800
+
+libomegonprocam (56.25996.20240707) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <>  Sun, 07 Jul 2024 20:31:25 +0800
+
+libomegonprocam (55.25633.20240519) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <>  Mon, 20 May 2024 08:38:00 +0800
+
+libomegonprocam (55.24621.20240204) jammy; urgency=medium
+
+  * Upstream release
+
+ -- nimax <>  Mon, 05 Feb 2024 08:24:12 +0800
+
+libomegonprocam (1.54.2) jammy; urgency=medium
+
+  * Upstream release
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Fri, 25 Aug 2023 15:00:00 +0300
+
 libomegonprocam (1.53.2) bullseye; urgency=medium
 
   * Upstream release

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 PROJECT(indi_ssag CXX C)
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
@@ -8,7 +8,7 @@ include(GNUInstallDirs)
 find_package(INDI REQUIRED)
 find_package(USB1 REQUIRED)
 
-set(UDEVRULES_INSTALL_DIR "/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
+set(UDEVRULES_INSTALL_DIR "/usr/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
 
 set(INDI_SSAG_VERSION_MAJOR 1)
 set(INDI_SSAG_VERSION_MINOR 0)
@@ -36,9 +36,9 @@ add_executable(indi_ssag_ccd ${indissag_SRCS})
 
 target_link_libraries(indi_ssag_ccd ${INDI_LIBRARIES} ${CFITSIO_LIBRARIES} ${USB1_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
+if (CMAKE_SYSTEM_NAME MATCHES "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
 target_link_libraries(indi_ssag_ccd rt)
-endif (CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
+endif (CMAKE_SYSTEM_NAME MATCHES "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm*")
 
 install(TARGETS indi_ssag_ccd RUNTIME DESTINATION bin )
 

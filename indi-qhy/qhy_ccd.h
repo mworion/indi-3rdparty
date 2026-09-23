@@ -33,7 +33,7 @@
 class QHYCCD : public INDI::CCD, public INDI::FilterInterface
 {
     public:
-        QHYCCD(const char *m_Name);
+        QHYCCD(const char *m_Name, const char *m_CamID);
         virtual ~QHYCCD() override = default;
 
         virtual void ISGetProperties(const char *dev) override;
@@ -46,6 +46,11 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
             return m_Name;
         }
 
+        const char *getCameraID() const
+        {
+            return m_CamID;
+        }
+
         INumberVectorProperty getLEDStartPosNP() const;
         void setLEDStartPosNP(const INumberVectorProperty &value);
 
@@ -56,7 +61,9 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
 
         // Connection
         virtual bool Connect() override;
+    public: // Making Disconnect public for hotplug handler
         virtual bool Disconnect() override;
+    protected:
 
         // Temperature
         virtual int SetTemperature(double temperature) override;
@@ -64,6 +71,7 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
         virtual bool AbortExposure() override;
 
         // Debug
+        virtual void nicknameSet(const char *nickname) override;
         virtual void debugTriggered(bool enable) override;
 
         // CCD
@@ -88,7 +96,7 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
         virtual void TimerHit() override;
         virtual bool saveConfigItems(FILE *fp) override;
         virtual const char *getDefaultName() override;
-        void addFITSKeywords(INDI::CCDChip *targetChip) override;
+        void addFITSKeywords(INDI::CCDChip *targetChip, std::vector<INDI::FITSRecord> &fitsKeywords) override;
 
         /////////////////////////////////////////////////////////////////////////////
         /// Camera Properties
@@ -105,13 +113,13 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
         /////////////////////////////////////////////////////////////////////////////
 
         bool m_SupportedBins[4];
-		enum
-		{
-		Bin1x1,
-		Bin2x2,
-		Bin3x3,
-		Bin4x4,
-		};
+        enum
+        {
+            Bin1x1,
+            Bin2x2,
+            Bin3x3,
+            Bin4x4,
+        };
 
 
         // Cooler Switch
@@ -179,6 +187,11 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
         // Humidity Readout
         INumber HumidityN[1];
         INumberVectorProperty HumidityNP;
+
+        // CAA Rotator (if camera supports CONTROL_CAA_ROTATOR=95)
+        INumber CAARotatorN[1];
+        INumberVectorProperty CAARotatorNP;
+
         /////////////////////////////////////////////////////////////////////////////
         /// Properties: Utility Controls
         /////////////////////////////////////////////////////////////////////////////
@@ -314,12 +327,12 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
             uint32_t subH = 0;
         } effectiveROI, sensorROI;  //NEW CODE - Add support for overscan/calibration area, obsolete overscanROI
 
-        typedef struct
+        typedef struct QHYReadModeInfo
         {
-            char label[128] = {0};
-            uint32_t id = 0;
-            uint32_t subW = 0;
-            uint32_t subH = 0;
+            char label[128];  // Will be zero-initialized
+            uint32_t id;
+            uint32_t subW;
+            uint32_t subH;
         } QHYReadModeInfo; // N.R. - Add support for read mode selection
 
         typedef enum GPSState
@@ -342,8 +355,8 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
             uint16_t height = 0;
 
             // Location
-            uint32_t latitude = 0;
-            uint32_t longitude = 0;
+            double latitude = 0;
+            double longitude = 0;
 
             // Start Time
             uint8_t start_flag = 0;
@@ -439,6 +452,7 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
         bool HasReadMode { false };
         bool HasGPS { false };
         bool HasHumidity { false };
+        bool HasCAA { false };
         bool HasAmpGlow { false };
         //NEW CODE - Add support for overscan/calibration area
         bool HasOverscanArea { false };
@@ -490,11 +504,12 @@ class QHYCCD : public INDI::CCD, public INDI::FilterInterface
         pthread_mutex_t condMutex = PTHREAD_MUTEX_INITIALIZER;
 
         void logQHYMessages(const std::string &message);
-        std::function<void(const std::string &)> m_QHYLogCallback;
+        std::function < void(const std::string &) > m_QHYLogCallback;
 
         /////////////////////////////////////////////////////////////////////////////
         /// Static Helper Values
         /////////////////////////////////////////////////////////////////////////////
         static constexpr const char * GPS_CONTROL_TAB = "GPS Control";
         static constexpr const char * GPS_DATA_TAB = "GPS Data";
+        static constexpr uint64_t QHY_SER_US_EPOCH = 62948880000000000; // offset to SER epoch January 1, 1 AD
 };

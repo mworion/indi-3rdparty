@@ -284,9 +284,13 @@ SBIGCCD::SBIGCCD() : FilterInterface(this)
         LOGF_DEBUG("%s: Error (%s)", __FUNCTION__, GetErrorString(res));
     // TBD: For now let's set name to default name. In the future, we need to to support multiple devices per one driver
     if (*getDeviceName() == '\0')
-        strncpy(name, getDefaultName(), MAXINDINAME);
+    {
+        snprintf(name, sizeof(name), "%s", getDefaultName());
+    }
     else
-        strncpy(name, getDeviceName(), MAXINDINAME);
+    {
+        snprintf(name, sizeof(name), "%s", getDeviceName());
+    }
 
     setVersion(SBIG_VERSION_MAJOR, SBIG_VERSION_MINOR);
 }
@@ -470,12 +474,12 @@ bool SBIGCCD::initProperties()
                        ISR_1OFMANY, 60, IPS_IDLE);
 
 
-    IUSaveText(&BayerT[2], "BGGR");
+    BayerTP[2].setText("BGGR");
 
     INDI::FilterInterface::initProperties(FILTER_TAB);
 
-    FilterSlotN[0].min = 1;
-    FilterSlotN[0].max = MAX_CFW_TYPES;
+    FilterSlotNP[0].setMin(1);
+    FilterSlotNP[0].setMax(MAX_CFW_TYPES);
 
     // Set minimum exposure speed to 0.001 seconds
     PrimaryCCD.setMinMaxStep("CCD_EXPOSURE", "CCD_EXPOSURE_VALUE", 0.001, 3600, 1, false);
@@ -585,10 +589,7 @@ bool SBIGCCD::updateProperties()
             deleteProperty(FilterConnectionSP.name);
             deleteProperty(FilterTypeSP.name);
             deleteProperty(FilterProdcutTP.name);
-            if (FilterNameT != nullptr)
-            {
-                deleteProperty(FilterNameTP->name);
-            }
+            deleteProperty(FilterNameTP);
         }
         rmTimer(m_TimerID);
     }
@@ -616,7 +617,7 @@ bool SBIGCCD::ISNewText(const char *dev, const char *name, char *texts[], char *
             return true;
         }
         // Filter Name
-        else if (strcmp(name, FilterNameTP->name) == 0)
+        else if (strcmp(name, FilterNameTP.getName()) == 0)
         {
             INDI::FilterInterface::processText(dev, name, texts, names, n);
             return true;
@@ -678,7 +679,7 @@ bool SBIGCCD::ISNewSwitch(const char *dev, const char *name, ISState *states, ch
         {
             IUUpdateSwitch(&CoolerSP, states, names, n);
             bool coolerON = CoolerS[0].s == ISS_ON;
-            if (SetTemperatureRegulation(TemperatureN[0].value, coolerON) == CE_NO_ERROR)
+            if (SetTemperatureRegulation(TemperatureNP[0].getValue(), coolerON) == CE_NO_ERROR)
             {
                 CoolerSP.s = coolerON ? IPS_OK : IPS_IDLE;
                 LOGF_INFO("Cooler turned %s.", coolerON ? "On" : "Off");
@@ -756,13 +757,11 @@ bool SBIGCCD::ISNewNumber(const char *dev, const char *name, double values[], ch
     if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
     {
         // Filter Slot Handling
-        if (!strcmp(name, FilterSlotNP.name))
-        {
-            INDI::FilterInterface::processNumber(dev, name, values, names, n);
+        if (INDI::FilterInterface::processNumber(dev, name, values, names, n))
             return true;
-        }
+
         // NS Adaptive Optics
-        else if (!strcmp(name, AONSNP.name))
+        if (!strcmp(name, AONSNP.name))
         {
             IUUpdateNumber(&AONSNP, values, names, n);
             uint16_t deflection = 0;
@@ -1010,9 +1009,9 @@ bool SBIGCCD::setupParams()
         IDSetSwitch(&CoolerSP, nullptr);
         CoolerN[0].value = power * 100;
         IDSetNumber(&CoolerNP, nullptr);
-        TemperatureN[0].min = MIN_CCD_TEMP;
-        TemperatureN[0].max = MAX_CCD_TEMP;
-        IUUpdateMinMax(&TemperatureNP);
+        TemperatureNP[0].setMin(MIN_CCD_TEMP);
+        TemperatureNP[0].setMax(MAX_CCD_TEMP);
+        TemperatureNP.updateMinMax();
     }
 
     IUSaveText(&ProductInfoT[0], GetCameraName());
@@ -1024,7 +1023,7 @@ bool SBIGCCD::setupParams()
 
 int SBIGCCD::SetTemperature(double temperature)
 {
-    if (fabs(temperature - TemperatureN[0].value) < 0.1)
+    if (fabs(temperature - TemperatureNP[0].getValue()) < 0.1)
         return 1;
     if (SetTemperatureRegulation(temperature) == CE_NO_ERROR)
     {
@@ -1495,8 +1494,7 @@ bool SBIGCCD::saveConfigItems(FILE *fp)
     IUSaveConfigText(fp, &IpTP);
     IUSaveConfigSwitch(fp, &IgnoreErrorsSP);
 
-    if (FilterNameT)
-        INDI::FilterInterface::saveConfigItems(fp);
+    INDI::FilterInterface::saveConfigItems(fp);
 
     IUSaveConfigSwitch(fp, &FilterTypeSP);
     return true;
@@ -1679,7 +1677,7 @@ int SBIGCCD::SetTemperatureRegulation(double temperature, bool enable)
     SetTemperatureRegulationParams strp;
     if (isSimulation())
     {
-        TemperatureN[0].value = temperature;
+        TemperatureNP[0].setValue(temperature);
         return CE_NO_ERROR;
     }
     if (CheckLink())
@@ -1706,7 +1704,7 @@ int SBIGCCD::QueryTemperatureStatus(bool &enabled, double &ccdTemp, double &setp
     if (isSimulation())
     {
         enabled      = (CoolerS[0].s == ISS_ON);
-        ccdTemp      = TemperatureN[0].value;
+        ccdTemp      = TemperatureNP[0].getValue();
         setpointTemp = ccdTemp;
         power        = enabled ? 0.5 : 0;
         return CE_NO_ERROR;
@@ -2497,8 +2495,8 @@ bool SBIGCCD::SelectFilter(int position)
     }
     else
     {
-        FilterSlotNP.s = IPS_ALERT;
-        IDSetNumber(&FilterSlotNP, nullptr);
+        FilterSlotNP.setState(IPS_ALERT);
+        FilterSlotNP.apply();
         LOG_INFO("Failed to reach position");
         return false;
     }
@@ -2534,14 +2532,14 @@ void SBIGCCD::updateTemperature()
         //        }
         if (power == 0)
         {
-            TemperatureNP.s = IPS_IDLE;
+            TemperatureNP.setState(IPS_IDLE);
         }
         else
         {
-            TemperatureNP.s = IPS_BUSY;
+            TemperatureNP.setState(IPS_BUSY);
             LOGF_DEBUG("CCD temperature %+.1f [C], TE cooler: %.1f [%%].", ccdTemp, power);
         }
-        TemperatureN[0].value = ccdTemp;
+        TemperatureNP[0].setValue(ccdTemp);
         // Check the TE cooler if inside the range:
         if (power <= CCD_COOLER_THRESHOLD)
         {
@@ -2552,7 +2550,7 @@ void SBIGCCD::updateTemperature()
             CoolerNP.s = IPS_BUSY;
         }
         CoolerN[0].value = power;
-        IDSetNumber(&TemperatureNP, nullptr);
+        TemperatureNP.apply();
         IDSetNumber(&CoolerNP, nullptr);
     }
     else
@@ -2561,14 +2559,14 @@ void SBIGCCD::updateTemperature()
         if (res == CE_SHARE_ERROR)
         {
             LOGF_DEBUG("Erro reading temperature. %s", GetErrorString(res));
-            TemperatureNP.s = IPS_IDLE;
+            TemperatureNP.setState(IPS_IDLE);
         }
         else
         {
             LOGF_ERROR("Erro reading temperature. %s", GetErrorString(res));
-            TemperatureNP.s = IPS_ALERT;
+            TemperatureNP.setState(IPS_ALERT);
         }
-        IDSetNumber(&TemperatureNP, nullptr);
+        TemperatureNP.apply();
     }
     IEAddTimer(TEMPERATURE_POLL_MS, SBIGCCD::updateTemperatureHelper, this);
 }
@@ -2795,24 +2793,24 @@ int SBIGCCD::CFWConnect()
         LOGF_DEBUG("CFW Firmware: %s", fw);
         FilterProdcutTP.s = IPS_OK;
         defineProperty(&FilterProdcutTP);
-        FilterSlotN[0].min   = 1;
-        FilterSlotN[0].max   = CFWr.cfwResult2;
-        FilterSlotN[0].value = CFWr.cfwPosition;
-        if (FilterSlotN[0].value < FilterSlotN[0].min)
+        FilterSlotNP[0].setMin(1);
+        FilterSlotNP[0].setMax(CFWr.cfwResult2);
+        FilterSlotNP[0].setValue(CFWr.cfwPosition);
+        if (FilterSlotNP[0].getValue() < FilterSlotNP[0].getMin())
         {
-            FilterSlotN[0].value = FilterSlotN[0].min;
+            FilterSlotNP[0].setValue(FilterSlotNP[0].getMin());
         }
-        else if (FilterSlotN[0].value > FilterSlotN[0].max)
+        else if (FilterSlotNP[0].getValue() > FilterSlotNP[0].getMax())
         {
-            FilterSlotN[0].value = FilterSlotN[0].max;
+            FilterSlotNP[0].setValue(FilterSlotNP[0].getMax());
         }
 
-        LOGF_DEBUG("CFW min: 1 Max: %g Current Slot: %g", FilterSlotN[0].max, FilterSlotN[0].value);
+        LOGF_DEBUG("CFW min: 1 Max: %g Current Slot: %g", FilterSlotNP[0].getMax(), FilterSlotNP[0].getValue());
 
-        defineProperty(&FilterSlotNP);
-        if (FilterNameT == nullptr)
+        defineProperty(FilterSlotNP);
+        if (FilterNameTP.size() == 0)
             GetFilterNames();
-        if (FilterNameT)
+        if (FilterNameTP.size() > 0)
             defineProperty(FilterNameTP);
 
         LOG_DEBUG("Loading FILTER_SLOT from config file...");
@@ -2857,9 +2855,9 @@ int SBIGCCD::CFWDisconnect()
         FilterConnectionS[1].s = ISS_ON;
         FilterConnectionSP.s   = IPS_IDLE;
         IDSetSwitch(&FilterConnectionSP, "CFW disconnected");
-        deleteProperty(FilterSlotNP.name);
+        deleteProperty(FilterSlotNP);
         deleteProperty(FilterProdcutTP.name);
-        deleteProperty(FilterNameTP->name);
+        deleteProperty(FilterNameTP);
     }
     return res;
 }

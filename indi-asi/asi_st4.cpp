@@ -30,28 +30,28 @@
 
 static class Loader
 {
-    std::deque<std::unique_ptr<ASIST4>> st4s;
-public:
-    Loader()
-    {
-        int iConnectedST4Count = USB2ST4GetNum();
-
-        if (iConnectedST4Count <= 0)
+        std::deque<std::unique_ptr<ASIST4>> st4s;
+    public:
+        Loader()
         {
-            IDLog("No ASI ST4 detected. Power on?");
-            return;
-        }
+            int iConnectedST4Count = USB2ST4GetNum();
 
-        for (int i = 0; i < iConnectedST4Count; i++)
-        {
-            int id=0;
-            USB2ST4GetID(i, &id);
-            st4s.push_back(std::unique_ptr<ASIST4>(new ASIST4(id)));
+            if (iConnectedST4Count <= 0)
+            {
+                IDLog("No ZWO ST4 detected. Power on?");
+                return;
+            }
+
+            for (int i = 0; i < iConnectedST4Count; i++)
+            {
+                int id = 0;
+                USB2ST4GetID(i, &id);
+                st4s.push_back(std::unique_ptr<ASIST4>(new ASIST4(id)));
+            }
         }
-    }
 } loader;
 
-ASIST4::ASIST4(int id)
+ASIST4::ASIST4(int id) : GI(this)
 {
     this->ID = id;
 
@@ -75,7 +75,7 @@ bool ASIST4::initProperties()
 {
     INDI::DefaultDevice::initProperties();
 
-    initGuiderProperties(getDeviceName(), MAIN_CONTROL_TAB);
+    GI::initProperties(MAIN_CONTROL_TAB);
 
     addDebugControl();
 
@@ -85,18 +85,7 @@ bool ASIST4::initProperties()
 bool ASIST4::updateProperties()
 {
     INDI::DefaultDevice::updateProperties();
-
-    if (isConnected())
-    {
-        defineProperty(&GuideNSNP);
-        defineProperty(&GuideWENP);
-    }
-    else
-    {
-        deleteProperty(GuideNSNP.name);
-        deleteProperty(GuideWENP.name);
-    }
-
+    GI::updateProperties();
     return true;
 }
 
@@ -116,7 +105,7 @@ bool ASIST4::Connect()
 }
 
 bool ASIST4::Disconnect()
-{    
+{
     LOGF_DEBUG("Closing %s...", name);
 
     USB2ST4Close(ID);
@@ -127,14 +116,9 @@ bool ASIST4::Disconnect()
 
 bool ASIST4::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
 {
-    if (dev != nullptr && strcmp(dev, getDeviceName()) == 0)
-    {
-        if (!strcmp(name, GuideNSNP.name) || !strcmp(name, GuideWENP.name))
-        {
-            processGuiderProperties(name, values, names, n);
-            return true;
-        }
-    }
+    // Check guider interface
+    if (GI::processNumber(dev, name, values, names, n))
+        return true;
 
     return INDI::DefaultDevice::ISNewNumber(dev, name, values, names, n);
 }
@@ -174,10 +158,10 @@ void ASIST4::stopTimerNS()
 {
     if (NStimerID != -1)
     {
-      USB2ST4PulseGuide(ID, NSDir, false);
-      GuideComplete(AXIS_DE);
-      IERmTimer(NStimerID);
-      NStimerID = -1;
+        USB2ST4PulseGuide(ID, NSDir, false);
+        GuideComplete(AXIS_DE);
+        IERmTimer(NStimerID);
+        NStimerID = -1;
     }
 }
 
@@ -265,10 +249,10 @@ void ASIST4::stopTimerWE()
 {
     if (WEtimerID != -1)
     {
-      USB2ST4PulseGuide(ID, WEDir, false);
-      GuideComplete(AXIS_RA);
-      IERmTimer(WEtimerID);
-      WEtimerID = -1;
+        USB2ST4PulseGuide(ID, WEDir, false);
+        GuideComplete(AXIS_RA);
+        IERmTimer(WEtimerID);
+        WEtimerID = -1;
     }
 }
 
@@ -324,7 +308,7 @@ IPState ASIST4::GuideWest(uint32_t ms)
 
 double ASIST4::calcTimeLeft(double duration, timeval *start_time)
 {
-    double timeleft=0;
+    double timeleft = 0;
     struct timeval now;
 
     gettimeofday(&now, nullptr);

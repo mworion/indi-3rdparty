@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 PROJECT(indi-fishcamp CXX C)
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
@@ -8,6 +8,7 @@ include(GNUInstallDirs)
 find_package(CFITSIO REQUIRED)
 find_package(INDI REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(USB1 REQUIRED)
 find_package(FISHCAMP REQUIRED)
 
 set (FISHCAMP_VERSION_MAJOR 1)
@@ -21,6 +22,7 @@ include_directories( ${CMAKE_CURRENT_SOURCE_DIR})
 include_directories( ${INDI_INCLUDE_DIR})
 include_directories( ${CFITSIO_INCLUDE_DIR})
 include_directories( ${FISHCAMP_INCLUDE_DIR})
+include_directories( ${USB1_INCLUDE_DIR})
 
 include(CMakeCommon)
 

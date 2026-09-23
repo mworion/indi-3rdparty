@@ -1,13 +1,15 @@
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required(VERSION 3.16)
 project (libstarshootg)
 
-# Using Starshoot G SDK Version: 48.18421.20210202
-set (LIBSTARSHOOTG_VERSION "1.48.1")
-set (LIBSTARSHOOTG_SOVERSION "1")
+set (LIBSTARSHOOTG_VERSION "60.32226")
+set (LIBSTARSHOOTG_SOVERSION "60")
+
+option(INDI_INSTALL_UDEV_RULES "Install UDEV rules" On)
 
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 list (APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
 include (GNUInstallDirs)
+include(CMakeCommon)
 include (InstallImported)
 
 add_library (starshootg SHARED IMPORTED)
@@ -18,7 +20,7 @@ if (APPLE)
 
   set_property (TARGET starshootg PROPERTY IMPORTED_LOCATION "mac/libstarshootg.bin")
 
-  FIX_LIBRARY_ID("libstarshootg" "mac/libstarshootg.bin" "StarShoot")
+  FIX_MACOS_LIBRARIES("libstarshootg" "mac/libstarshootg.bin" "StarShoot")
 
 elseif (UNIX AND NOT WIN32)
 
@@ -31,8 +33,10 @@ elseif (UNIX AND NOT WIN32)
   endif ()
 
   # Install udev rules
-  set (UDEVRULES_INSTALL_DIR "/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
-  install (FILES 99-starshootg.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  if (INDI_INSTALL_UDEV_RULES)
+    set (UDEVRULES_INSTALL_DIR "/usr/lib/udev/rules.d" CACHE STRING "Base directory for udev rules")
+    install (FILES 99-starshootg.rules DESTINATION ${UDEVRULES_INSTALL_DIR})
+  endif ()
 
 endif ()
 

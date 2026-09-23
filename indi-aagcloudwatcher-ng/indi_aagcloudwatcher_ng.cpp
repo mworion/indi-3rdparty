@@ -1,26 +1,26 @@
 /**
-This file is part of the AAG Cloud Watcher INDI Driver.
-A driver for the AAG Cloud Watcher (AAGware - http : //www.aagware.eu/)
+   This file is part of the AAG Cloud Watcher INDI Driver.
+   A driver for the AAG Cloud Watcher (AAGware - http : //www.aagware.eu/)
 
-Copyright (C) 2012 - 2015 Sergio Alonso (zerjioi@ugr.es)
-Copyright (C) 2019 Adrián Pardini - Universidad Nacional de La Plata (github@tangopardo.com.ar)
-Copyright (C) 2021 Jasem Mutlaq
+   Copyright (C) 2012 - 2015 Sergio Alonso (zerjioi@ugr.es)
+   Copyright (C) 2019 Adrián Pardini - Universidad Nacional de La Plata (github@tangopardo.com.ar)
+   Copyright (C) 2021 Jasem Mutlaq
 
-AAG Cloud Watcher INDI Driver is free software : you can redistribute it
-and / or modify it under the terms of the GNU General Public License as
-published by the Free Software Foundation, either version 3 of the License,
-or (at your option) any later version.
+   AAG Cloud Watcher INDI Driver is free software : you can redistribute it
+   and / or modify it under the terms of the GNU General Public License as
+   published by the Free Software Foundation, either version 3 of the License,
+   or (at your option) any later version.
 
-AAG Cloud Watcher INDI Driver is distributed in the hope that it will be
-useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+   AAG Cloud Watcher INDI Driver is distributed in the hope that it will be
+   useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with AAG Cloud Watcher INDI Driver.  If not, see
-< http : //www.gnu.org/licenses/>.
+   You should have received a copy of the GNU General Public License
+   along with AAG Cloud Watcher INDI Driver.  If not, see
+   < http : //www.gnu.org/licenses/>.
 
-Anemometer code contributed by Joao Bento.
+   Anemometer code contributed by Joao Bento.
 */
 
 #include "indi_aagcloudwatcher_ng.h"
@@ -52,26 +52,59 @@ AAGCloudWatcher::AAGCloudWatcher()
 
     desiredSensorTemperature = 0;
     globalRainSensorHeater   = -1;
+
+    usePIDforHeating = false;
+
+    heaterPID = new HeaterPID(0, 0, 0, 10, 100);
+
 }
 
 AAGCloudWatcher::~AAGCloudWatcher()
 {
+    delete (heaterPID);
     delete (cwc);
 }
 
 bool AAGCloudWatcher::Handshake()
 {
     cwc->setPortFD(PortFD);
-    int check = cwc->checkCloudWatcher();
+
+    // 2 sec delay added to support Pocket Cloudwatcher
+    (void) sleep(2);
+
+    auto check = cwc->checkCloudWatcher();
 
     if (check)
     {
-        LOG_INFO("Connected to AAG Cloud Watcher");
+        LOG_INFO("Connected to AAG Cloud Watcher (Lunatico Astro)");
         sendConstants();
 
-        if (m_FirmwareVersion >= 5.6) {
-            addParameter("WEATHER_HUMIDITY", "Relative Humidity (%)", 0, 100, 10);
-            setCriticalParameter("WEATHER_HUMIDITY");
+        if (m_FirmwareVersion >= 5.6)
+        {
+            // add humidity parameter, if not already present
+            if (!ParametersNP.findWidgetByName("WEATHER_HUMIDITY"))
+            {
+                addParameter("WEATHER_HUMIDITY", "Relative Humidity (%)", 0, 100, 10);
+                setCriticalParameter("WEATHER_HUMIDITY");
+            }
+            if (m_FirmwareVersion >= 5.89)
+            {
+                // add SQM parameter, if not already present
+                if (!ParametersNP.findWidgetByName("WEATHER_SQM"))
+                {
+                    addParameter("WEATHER_SQM", "SQM (mpsas)", 18.50, 28.50, 10);
+                    setCriticalParameter("WEATHER_SQM");
+                }
+            }
+            else
+            {
+                // add pseudo-SQM parameter, if not already present
+                if (!ParametersNP.findWidgetByName("WEATHER_SQM"))
+                {
+                    addParameter("WEATHER_SQM", "Ambient light brightness (K)", 2100, 1000000, 20);
+                    setCriticalParameter("WEATHER_SQM");
+                }
+            }
         }
 
         return true;
@@ -86,31 +119,77 @@ bool AAGCloudWatcher::Handshake()
 
 
 /**********************************************************************
-** Initialize all properties & set default values.
-**********************************************************************/
+ ** Initialize all properties & set default values.
+ **********************************************************************/
 bool AAGCloudWatcher::initProperties()
 {
     INDI::Weather::initProperties();
     buildSkeleton("indi_aagcloudwatcher_ng_sk.xml");
 
-    addParameter("WEATHER_BRIGHTNESS", "Ambient light brightness (K)", 2100, 1000000, 10);
-    addParameter("WEATHER_WIND_SPEED", "Wind speed (Km/H)", 0, 30, 10);
+    addParameter("WEATHER_WIND_SPEED", "Wind speed (Km/H)", 0, 30, 50);
     addParameter("WEATHER_RAIN", "Rain (cycles)", 2000, 10000, 10);
-    addParameter("WEATHER_CLOUD", "Cloud (corrected infrared sky temperature °C)", -5, 10, 10);
+    addParameter("WEATHER_CLOUD", "Cloud (corrected infrared sky temperature °C)", -40, 60, 20, true);
 
-    setCriticalParameter("WEATHER_BRIGHTNESS");
     setCriticalParameter("WEATHER_WIND_SPEED");
     setCriticalParameter("WEATHER_RAIN");
     setCriticalParameter("WEATHER_CLOUD");
-    
+
 
     addDebugControl();
 
     return true;
 }
 
+/**********************************************************************
+ ** Restore the saved settings.
+ **
+ ** This must happen after the base class has defined the properties:
+ ** the driver-side dispatcher rejects a value for a property that has not
+ ** been defined yet, so calling loadConfig() from initProperties() silently
+ ** does nothing.
+ **
+ ** Loading goes through the regular ISNew*() handlers, so driver state derived
+ ** from these properties (anemometer type, heating algorithm) is set up as well.
+ ** Doing it here instead of relying on the client pressing "Load" keeps the
+ ** settings working under a plain indiserver too.
+ **********************************************************************/
+void AAGCloudWatcher::ISGetProperties(const char *dev)
+{
+    INDI::Weather::ISGetProperties(dev);
+
+    if (!m_ConfigLoaded)
+    {
+        m_ConfigLoaded = true;
+        for (const auto &property : CONFIGURABLE_PROPERTIES)
+            loadConfig(true, property);
+    }
+}
+
+/**********************************************************************
+ ** Persist the user-configurable settings.
+ **********************************************************************/
+bool AAGCloudWatcher::saveConfigItems(FILE *fp)
+{
+    INDI::Weather::saveConfigItems(fp);
+
+    // buildSkeleton() may have failed (missing indi_aagcloudwatcher_ng_sk.xml), in
+    // which case these properties do not exist. save() on an invalid property is a
+    // no-op, but check explicitly so the intent is clear.
+    for (const auto &name : CONFIGURABLE_PROPERTIES)
+    {
+        auto property = getProperty(name);
+        if (property.isValid())
+            property.save(fp);
+    }
+
+    return true;
+}
+
 IPState AAGCloudWatcher::updateWeather()
 {
+    // in case elevation updated as GPS gets a better fix
+    cwc->setElevation(LocationNP[INDI::Weather::LOCATION_ELEVATION].getValue());
+
     if (!sendData())
     {
         LOG_ERROR("Can not get data from device");
@@ -127,241 +206,284 @@ IPState AAGCloudWatcher::updateWeather()
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 bool AAGCloudWatcher::ISNewNumber(const char *dev, const char *name, double values[], char *names[], int n)
 {
-    INDI::Weather::ISNewNumber(dev, name, values, names, n);
-
-    // Ignore if not ours
-    if (strcmp(dev, getDefaultName()))
+    if (dev && !strcmp(dev, getDeviceName()))
     {
-        return false;
-    }
+        auto nvp = getNumber(name);
 
-    INumberVectorProperty *nvp = getNumber(name);
-
-    if (!nvp)
-    {
-        return false;
-    }
-
-    if (!strcmp(nvp->name, "heaterParameters"))
-    {
-        for (int i = 0; i < 8; i++)
+        if (nvp)
         {
-            if ((strcmp(names[i], "tempLow") == 0) || (strcmp(names[i], "tempHigh") == 0))
+
+            if (nvp.isNameMatch("WEATHER_UPDATE") || nvp.isNameMatch("WEATHER_RAIN"))
             {
-                if (values[i] < -50)
-                {
-                    values[i] = -50;
-                }
-                else if (values[i] > 100)
-                {
-                    values[i] = 100;
-                }
+                nvp.update(values, names, n);
+                nvp.setState(IPS_OK);
+                nvp.apply();
+
+                return true;
             }
 
-            if ((strcmp(names[i], "deltaHigh") == 0) || (strcmp(names[i], "deltaLow") == 0))
+            if (nvp.isNameMatch("heaterParameters"))
             {
-                if (values[i] < 0)
+                for (int i = 0; i < n; i++)
                 {
-                    values[i] = 0;
+                    if ((strcmp(names[i], "tempLow") == 0) || (strcmp(names[i], "tempHigh") == 0))
+                    {
+                        if (values[i] < -50)
+                        {
+                            values[i] = -50;
+                        }
+                        else if (values[i] > 100)
+                        {
+                            values[i] = 100;
+                        }
+                    }
+
+                    if ((strcmp(names[i], "deltaHigh") == 0) || (strcmp(names[i], "deltaLow") == 0))
+                    {
+                        if (values[i] < 0)
+                        {
+                            values[i] = 0;
+                        }
+                        else if (values[i] > 50)
+                        {
+                            values[i] = 50;
+                        }
+                    }
+
+                    if ((strcmp(names[i], "min") == 0))
+                    {
+                        if (values[i] < 1)
+                        {
+                            values[i] = 1;
+                        }
+                        else if (values[i] > 20)
+                        {
+                            values[i] = 20;
+                        }
+                    }
+
+                    if ((strcmp(names[i], "heatImpulseTemp") == 0))
+                    {
+                        if (values[i] < 1)
+                        {
+                            values[i] = 1;
+                        }
+                        else if (values[i] > 30)
+                        {
+                            values[i] = 30;
+                        }
+                    }
+
+                    if ((strcmp(names[i], "heatImpulseDuration") == 0))
+                    {
+                        if (values[i] < 0)
+                        {
+                            values[i] = 0;
+                        }
+                        else if (values[i] > 600)
+                        {
+                            values[i] = 600;
+                        }
+                    }
+
+                    if ((strcmp(names[i], "heatImpulseCycle") == 0))
+                    {
+                        if (values[i] < 60)
+                        {
+                            values[i] = 60;
+                        }
+                        else if (values[i] > 1000)
+                        {
+                            values[i] = 1000;
+                        }
+                    }
                 }
-                else if (values[i] > 50)
-                {
-                    values[i] = 50;
-                }
+
+
+
+                nvp.update(values, names, n);
+                nvp.setState(IPS_OK);
+                nvp.apply();
+
+                return true;
             }
 
-            if ((strcmp(names[i], "min") == 0))
+            if (nvp.isNameMatch("heaterPIDParameters"))
             {
-                if (values[i] < 10)
-                {
-                    values[i] = 10;
-                }
-                else if (values[i] > 20)
-                {
-                    values[i] = 20;
-                }
+                nvp.update(values, names, n);
+                nvp.setState(IPS_OK);
+                nvp.apply();
+
+                return true;
             }
 
-            if ((strcmp(names[i], "heatImpulseTemp") == 0))
+            // Broadcast the loaded/changed value to clients. Without a driver
+            // handler, sqmLimit falls through to DefaultDevice::ISNewNumber, which
+            // update()s the value internally but never apply()s it, so a config
+            // load would silently leave connected clients on the skeleton default.
+            if (nvp.isNameMatch("sqmLimit"))
             {
-                if (values[i] < 1)
-                {
-                    values[i] = 1;
-                }
-                else if (values[i] > 30)
-                {
-                    values[i] = 30;
-                }
+                nvp.update(values, names, n);
+                nvp.setState(IPS_OK);
+                nvp.apply();
+
+                return true;
             }
 
-            if ((strcmp(names[i], "heatImpulseDuration") == 0))
+            if (nvp.isNameMatch("skyCorrection"))
             {
-                if (values[i] < 0)
+                // Bound by n, not by the vector size: a client may send a subset.
+                for (int i = 0; i < n; i++)
                 {
-                    values[i] = 0;
+                    if (values[i] < -999)
+                    {
+                        values[i] = -999;
+                    }
+                    if (values[i] > 999)
+                    {
+                        values[i] = 999;
+                    }
                 }
-                else if (values[i] > 600)
-                {
-                    values[i] = 600;
-                }
+
+                nvp.update(values, names, n);
+                nvp.setState(IPS_OK);
+                nvp.apply();
+
+                return true;
             }
 
-            if ((strcmp(names[i], "heatImpulseCycle") == 0))
-            {
-                if (values[i] < 60)
-                {
-                    values[i] = 60;
-                }
-                else if (values[i] > 1000)
-                {
-                    values[i] = 1000;
-                }
-            }
-        }
+        } // nvp
+    } // dev
 
-        IUUpdateNumber(nvp, values, names, n);
-        nvp->s = IPS_OK;
-        IDSetNumber(nvp, nullptr);
-
-        return true;
-    }
-
-    if (!strcmp(nvp->name, "skyCorrection"))
-    {
-        for (int i = 0; i < 5; i++)
-        {
-            if (values[i] < -999)
-            {
-                values[i] = -999;
-            }
-            if (values[i] > 999)
-            {
-                values[i] = 999;
-            }
-        }
-
-        IUUpdateNumber(nvp, values, names, n);
-        nvp->s = IPS_OK;
-        IDSetNumber(nvp, nullptr);
-
-        return true;
-    }
-
-    return false;
+    return INDI::Weather::ISNewNumber(dev, name, values, names, n);
 }
 
 bool AAGCloudWatcher::ISNewSwitch(const char *dev, const char *name, ISState *states, char *names[], int n)
 {
-    // ignore if not ours
-    if (strcmp(dev, getDefaultName()))
+    if (dev && !strcmp(dev, getDeviceName()))
     {
-        return false;
-    }
+        auto svp = getSwitch(name);
 
-    if (INDI::Weather::ISNewSwitch(dev, name, states, names, n) == true)
-    {
-        return true;
-    }
-
-    ISwitchVectorProperty *svp = getSwitch(name);
-
-    if (!svp)
-    {
-        return false;
-    }
-
-    int error = 0;
-    if (!strcmp(svp->name, "deviceSwitch"))
-    {
-        char *namesSw[2];
-        ISState statesSw[2];
-        statesSw[0] = ISS_ON;
-        statesSw[1] = ISS_OFF;
-        namesSw[0]  = const_cast<char *>("open");
-        namesSw[1]  = const_cast<char *>("close");
-
-        ISState openState;
-
-        if (strcmp(names[0], "open") == 0)
+        if (svp)
         {
-            openState = states[0];
-        }
-        else
-        {
-            openState = states[1];
-        }
 
-        if (openState == ISS_ON)
-        {
-            if (isConnected())
+            if (svp.isNameMatch("heatingAlgorithm"))
             {
-                bool r = cwc->openSwitch();
+                svp.update(states, names, n);
+                svp.setState(IPS_OK);
+                svp.apply();
 
-                if (!r)
-                {
-                    statesSw[0] = ISS_OFF;
-                    statesSw[1] = ISS_ON;
-                }
+                // Derive the flag from the resulting switch state rather than from
+                // names[0]. A GUI client sends only the switch it turned on, but a
+                // configuration load sends the whole vector, in which case names[0]
+                // is not necessarily the selected one.
+                auto pid = svp.findWidgetByName("pid");
+                usePIDforHeating = (pid != nullptr && pid->getState() == ISS_ON);
+                LOGF_INFO("Changing heating algorithm to %s", usePIDforHeating ? "pid" : "original");
+
+                return true;
             }
-            else
+
+            int error = 0;
+            if (svp.isNameMatch("deviceSwitch"))
             {
+                char *namesSw[2];
+                ISState statesSw[2];
                 statesSw[0] = ISS_ON;
                 statesSw[1] = ISS_OFF;
-                error       = 1;
-            }
-        }
-        else
-        {
-            if (isConnected())
-            {
-                bool r = cwc->closeSwitch();
+                namesSw[0]  = const_cast<char *>("open");
+                namesSw[1]  = const_cast<char *>("close");
 
-                if (r)
+                ISState openState;
+
+                if (strcmp(names[0], "open") == 0)
                 {
-                    statesSw[0] = ISS_OFF;
-                    statesSw[1] = ISS_ON;
+                    openState = states[0];
                 }
+                else
+                {
+                    openState = states[1];
+                }
+
+                if (openState == ISS_ON)
+                {
+                    if (isConnected())
+                    {
+                        bool r = cwc->openSwitch();
+
+                        if (!r)
+                        {
+                            statesSw[0] = ISS_OFF;
+                            statesSw[1] = ISS_ON;
+                        }
+                    }
+                    else
+                    {
+                        statesSw[0] = ISS_ON;
+                        statesSw[1] = ISS_OFF;
+                        error       = 1;
+                    }
+                }
+                else
+                {
+                    if (isConnected())
+                    {
+                        bool r = cwc->closeSwitch();
+
+                        if (r)
+                        {
+                            statesSw[0] = ISS_OFF;
+                            statesSw[1] = ISS_ON;
+                        }
+                    }
+                    else
+                    {
+                        statesSw[0] = ISS_ON;
+                        statesSw[1] = ISS_OFF;
+                        error       = 1;
+                    }
+                }
+
+                svp.update(statesSw, namesSw, 2);
+                if (error)
+                {
+                    svp.setState(IPS_IDLE);
+                }
+                else
+                {
+                    svp.setState(IPS_OK);
+                }
+                svp.apply();
+
+                return true;
             }
-            else
+
+            if (svp.isNameMatch("anemometerType"))
             {
-                statesSw[0] = ISS_ON;
-                statesSw[1] = ISS_OFF;
-                error       = 1;
+                // Use n, not a hard-coded 2: a client may send only the switch it
+                // turned on, and reading past the end of states[]/names[] is UB.
+                svp.update(states, names, n);
+                svp.setState(IPS_OK);
+                svp.apply();
+
+                auto sp = svp.findWidgetByName("BLACK");
+                if (sp != nullptr && sp->getState() == ISS_ON)
+                {
+                    cwc->setAnemometerType(BLACK);
+                }
+                else
+                {
+                    cwc->setAnemometerType(GRAY);
+                }
+                return true;
             }
-        }
 
-        IUUpdateSwitch(svp, statesSw, namesSw, 2);
-        if (error)
-        {
-            svp->s = IPS_IDLE;
-        }
-        else
-        {
-            svp->s = IPS_OK;
-        }
-        IDSetSwitch(svp, nullptr);
+        } // svp
+    } // dev
 
-        return true;
-    }
-
-    if (!strcmp(svp->name, "anemometerType"))
-    {
-        IUUpdateSwitch(svp, states, names, 2);
-        svp->s = IPS_OK;
-
-        ISwitch *sp = IUFindSwitch(svp, "BLACK");
-        if (sp->s == ISS_ON)
-        {
-            cwc->setAnemometerType(BLACK);
-        }
-        else
-        {
-            cwc->setAnemometerType(GRAY);
-        }
-    }
-
-    return false;
+    return INDI::Weather::ISNewSwitch(dev, name, states, names, n);
 }
+
 
 float AAGCloudWatcher::getLastReadPeriod()
 {
@@ -375,7 +497,8 @@ bool AAGCloudWatcher::isWetRain()
 
 bool AAGCloudWatcher::heatingAlgorithm()
 {
-    INumberVectorProperty *heaterParameters = getNumber("heaterParameters");
+    auto  heaterParameters                  = getNumber("heaterParameters");
+    auto  heaterPIDParameters               = getNumber("heaterPIDParameters");
     float tempLow                           = getNumberValueFromVector(heaterParameters, "tempLow");
     float tempHigh                          = getNumberValueFromVector(heaterParameters, "tempHigh");
     float deltaLow                          = getNumberValueFromVector(heaterParameters, "deltaLow");
@@ -384,10 +507,13 @@ bool AAGCloudWatcher::heatingAlgorithm()
     float heatImpulseDuration               = getNumberValueFromVector(heaterParameters, "heatImpulseDuration");
     float heatImpulseCycle                  = getNumberValueFromVector(heaterParameters, "heatImpulseCycle");
     float min                               = getNumberValueFromVector(heaterParameters, "min");
+    float pidKp                             = getNumberValueFromVector(heaterPIDParameters, "pidKp");
+    float pidKi                             = getNumberValueFromVector(heaterPIDParameters, "pidKi");
+    float pidKd                             = getNumberValueFromVector(heaterPIDParameters, "pidKd");
 
-    INumberVectorProperty *sensors = getNumber("sensors");
-    float ambient                  = getNumberValueFromVector(sensors, "ambientTemperatureSensor");
-    float rainSensorTemperature    = getNumberValueFromVector(sensors, "rainSensorTemperature");
+    auto sensors                            = getNumber("sensors");
+    float ambient                           = getNumberValueFromVector(sensors, "ambientTemperatureSensor");
+    float rainSensorTemperature             = getNumberValueFromVector(sensors, "rainSensorTemperature");
 
     // XXX FIXME: when the automatic refresh is disabled the refresh period is set to 0, however we can be called in a manual fashion.
     // this is needed as we divide by refresh later...
@@ -448,7 +574,7 @@ bool AAGCloudWatcher::heatingAlgorithm()
 
         if (ambient < tempLow)
         {
-            desiredSensorTemperature = deltaLow;
+            desiredSensorTemperature = ambient + deltaLow;
         }
         else if (ambient > tempHigh)
         {
@@ -463,7 +589,7 @@ bool AAGCloudWatcher::heatingAlgorithm()
 
             if (desiredSensorTemperature < tempLow)
             {
-                desiredSensorTemperature = deltaLow;
+                desiredSensorTemperature = ambient + deltaLow;
             }
         }
     }
@@ -488,53 +614,84 @@ bool AAGCloudWatcher::heatingAlgorithm()
 
     if ((heatingStatus == normal) || (heatingStatus == pulse))
     {
-        // Check desired temperature and act accordingly
-        // Obtain the difference in temperature and modifier
-        float dif             = fabs(desiredSensorTemperature - rainSensorTemperature);
-        float refreshModifier = sqrt(WI::UpdatePeriodNP[0].getValue() / 10.0);
-        float modifier        = 1;
+        if (usePIDforHeating)
+        {
+            // Update PID parameters
+            heaterPID->setParameters(pidKp, pidKi, pidKd, min, 100);
 
-        if (dif > 8)
-        {
-            modifier = (1.4 / refreshModifier);
-        }
-        else if (dif > 4)
-        {
-            modifier = (1.2 / refreshModifier);
-        }
-        else if (dif > 3)
-        {
-            modifier = (1.1 / refreshModifier);
-        }
-        else if (dif > 2)
-        {
-            modifier = (1.06 / refreshModifier);
-        }
-        else if (dif > 1)
-        {
-            modifier = (1.04 / refreshModifier);
-        }
-        else if (dif > 0.5)
-        {
-            modifier = (1.02 / refreshModifier);
-        }
-        else if (dif > 0.3)
-        {
-            modifier = (1.01 / refreshModifier);
-        }
+            // Calculate new heating power percentage
+            double new_globalRainSensorHeater = heaterPID->calculate(desiredSensorTemperature, rainSensorTemperature);
 
-        if (rainSensorTemperature > desiredSensorTemperature)
-        {
-            // Lower heating
-            //   IDLog("Temp: %f, Desired: %f, Lowering: %f %f -> %f\n", rainSensorTemperature, desiredSensorTemperature, modifier, globalRainSensorHeater, globalRainSensorHeater / modifier);
-            globalRainSensorHeater /= modifier;
+            // Print key variables for debugging/PID tuning
+            double temperatureError = desiredSensorTemperature - rainSensorTemperature;
+            double pidCorrP = heaterPID->getLastCorrectionP();
+            double pidCorrI = heaterPID->getLastCorrectionI();
+            double pidCorrD = heaterPID->getLastCorrectionD();
+            double pidSumError = heaterPID->getSumError();
+
+            LOGF_DEBUG("RainSensor: Temperature: %f °C, Desired temperature: %f °C, Error: %f °C\n", rainSensorTemperature,
+                       desiredSensorTemperature, temperatureError);
+            LOGF_DEBUG("RainSensor: PID integrated error: %f\n", pidSumError);
+            LOGF_DEBUG("RainSensor: PID terms: P: %f, I: %f, D: %f\n", pidCorrP, pidCorrI, pidCorrD);
+            LOGF_DEBUG("RainSensor: Current heater power: %f %%, New heater power: %f %%\n", globalRainSensorHeater,
+                       new_globalRainSensorHeater);
+
+            // Set new heating power percentage
+            globalRainSensorHeater = new_globalRainSensorHeater;
         }
         else
         {
-            // increase heating
-            //   IDLog("Temp: %f, Desired: %f, Increasing: %f %f -> %f\n", rainSensorTemperature, desiredSensorTemperature, modifier, globalRainSensorHeater, globalRainSensorHeater * modifier);
-            globalRainSensorHeater *= modifier;
+            // Check desired temperature and act accordingly
+            // Obtain the difference in temperature and modifier
+            float dif             = fabs(desiredSensorTemperature - rainSensorTemperature);
+            float refreshModifier = sqrt(WI::UpdatePeriodNP[0].getValue() / 10.0);
+            float modifier        = 1;
+
+            if (dif > 8)
+            {
+                modifier = (1.4 / refreshModifier);
+            }
+            else if (dif > 4)
+            {
+                modifier = (1.2 / refreshModifier);
+            }
+            else if (dif > 3)
+            {
+                modifier = (1.1 / refreshModifier);
+            }
+            else if (dif > 2)
+            {
+                modifier = (1.06 / refreshModifier);
+            }
+            else if (dif > 1)
+            {
+                modifier = (1.04 / refreshModifier);
+            }
+            else if (dif > 0.5)
+            {
+                modifier = (1.02 / refreshModifier);
+            }
+            else if (dif > 0.3)
+            {
+                modifier = (1.01 / refreshModifier);
+            }
+
+            if (rainSensorTemperature > desiredSensorTemperature)
+            {
+                // Lower heating
+                LOGF_DEBUG("Temp: %f, Desired: %f, Lowering: %f %f -> %f\n", rainSensorTemperature, desiredSensorTemperature, modifier,
+                           globalRainSensorHeater, globalRainSensorHeater / modifier);
+                globalRainSensorHeater /= modifier;
+            }
+            else
+            {
+                // increase heating
+                LOGF_DEBUG("Temp: %f, Desired: %f, Increasing: %f %f -> %f\n", rainSensorTemperature, desiredSensorTemperature, modifier,
+                           globalRainSensorHeater, globalRainSensorHeater * modifier);
+                globalRainSensorHeater *= modifier;
+            }
         }
+
     }
 
     if (globalRainSensorHeater < min)
@@ -573,10 +730,10 @@ bool AAGCloudWatcher::heatingAlgorithm()
         statesSw[2] = ISS_ON;
     }
 
-    ISwitchVectorProperty *svp = getSwitch("heaterStatus");
-    IUUpdateSwitch(svp, statesSw, namesSw, 3);
-    svp->s = IPS_OK;
-    IDSetSwitch(svp, nullptr);
+    auto svp = getSwitch("heaterStatus");
+    svp.update(statesSw, namesSw, 3);
+    svp.setState(IPS_OK);
+    svp.apply();
     return true;
 }
 
@@ -587,41 +744,42 @@ bool AAGCloudWatcher::sendData()
     if (cwc->getAllData(&data) == 0)
         return false;
 
-    INumberVectorProperty *nvp = getNumber("readings");
-    nvp->np[RAW_SENSOR_SUPPLY].value = data.supply;
-    nvp->np[RAW_SENSOR_SKY].value = data.sky;
-    nvp->np[RAW_SENSOR_SENSOR].value = data.sensor;
-    nvp->np[RAW_SENSOR_AMBIENT].value = data.ambient;
-    nvp->np[RAW_SENSOR_RAIN].value = data.rain;
-    nvp->np[RAW_SENSOR_RAIN_HEATER].value = data.rainHeater;
-    nvp->np[RAW_SENSOR_RAIN_TEMPERATURE].value = data.rainTemperature;
-    nvp->np[RAW_SENSOR_LDR].value = data.ldr;
-    nvp->np[RAW_SENSOR_LDR_FREQ].value = data.ldrFreq;
-    nvp->np[RAW_SENSOR_READ_CYCLES].value = data.readCycle;
+    auto nvp = getNumber("readings");
+    nvp[RAW_SENSOR_SUPPLY].setValue(data.supply);
+    nvp[RAW_SENSOR_SKY].setValue(data.sky);
+    nvp[RAW_SENSOR_SENSOR].setValue(data.sensor);
+    nvp[RAW_SENSOR_TEMP_EST].setValue(data.tempEst);
+    nvp[RAW_SENSOR_TEMP_ACT].setValue(data.tempAct);
+    nvp[RAW_SENSOR_RAIN].setValue(data.rain);
+    nvp[RAW_SENSOR_RAIN_HEATER].setValue(data.rainHeater);
+    nvp[RAW_SENSOR_RAIN_TEMPERATURE].setValue(data.rainTemperature);
+    nvp[RAW_SENSOR_LDR].setValue(data.ldr);
+    nvp[RAW_SENSOR_LIGHT_FREQ].setValue(data.lightFreq);
+    nvp[RAW_SENSOR_READ_CYCLES].setValue(data.readCycle);
     lastReadPeriod = data.readCycle;
-    nvp->np[RAW_SENSOR_WIND_SPEED].value = data.windSpeed;
-    nvp->np[RAW_SENSOR_RELATIVE_HUMIDITY].value = data.humidity;
-    nvp->np[RAW_SENSOR_PRESSURE].value = data.pressure;
-    nvp->np[RAW_SENSOR_TOTAL_READINGS].value = data.totalReadings;
-    nvp->s = IPS_OK;
-    IDSetNumber(nvp, nullptr);
+    nvp[RAW_SENSOR_WIND_SPEED].setValue(data.windSpeed);
+    nvp[RAW_SENSOR_RELATIVE_HUMIDITY].setValue(data.humidity);
+    nvp[RAW_SENSOR_PRESSURE].setValue(data.pressure);
+    nvp[RAW_SENSOR_TOTAL_READINGS].setValue(data.totalReadings);
+    nvp.setState(IPS_OK);
+    nvp.apply();
 
-    INumberVectorProperty *nvpE = getNumber("unitErrors");
-    nvpE->np[0].value = data.internalErrors;
-    nvpE->np[1].value = data.firstByteErrors;
-    nvpE->np[2].value = data.commandByteErrors;
-    nvpE->np[3].value = data.secondByteErrors;
-    nvpE->np[4].value = data.pecByteErrors;
-    nvpE->s = IPS_OK;
-    IDSetNumber(nvpE, nullptr);
+    auto nvpE = getNumber("unitErrors");
+    nvpE[0].setValue(data.internalErrors);
+    nvpE[1].setValue(data.firstByteErrors);
+    nvpE[2].setValue(data.commandByteErrors);
+    nvpE[3].setValue(data.secondByteErrors);
+    nvpE[4].setValue(data.pecByteErrors);
+    nvpE.setState(IPS_OK);
+    nvpE.apply();
 
-    INumberVectorProperty *nvpS = getNumber("sensors");
+    auto nvpS = getNumber("sensors");
 
     float skyTemperature = float(data.sky) / 100.0;
-    nvpS->np[SENSOR_INFRARED_SKY].value = skyTemperature;
-    nvpS->np[SENSOR_INFRARED_SENSOR].value = float(data.sensor) / 100.0;
+    nvpS[SENSOR_INFRARED_SKY].setValue(skyTemperature);
+    nvpS[SENSOR_INFRARED_SENSOR].setValue(float(data.sensor) / 100.0);
 
-    nvpS->np[SENSOR_RAIN_SENSOR].value = data.rain;
+    nvpS[SENSOR_RAIN_SENSOR].setValue(data.rain);
 
     float rainSensorTemperature = data.rainTemperature;
     if (rainSensorTemperature > 1022)
@@ -637,27 +795,47 @@ bool AAGCloudWatcher::sendData()
     rainSensorTemperature =
         1.0 / (rainSensorTemperature / constants.rainBetaFactor + 1.0 / (ABS_ZERO + 25.0)) - ABS_ZERO;
 
-    nvpS->np[SENSOR_RAIN_SENSOR_TEMPERATURE].value = rainSensorTemperature;
+    nvpS[SENSOR_RAIN_SENSOR_TEMPERATURE].setValue(rainSensorTemperature);
 
     float rainSensorHeater = data.rainHeater;
     rainSensorHeater       = 100.0 * rainSensorHeater / 1023.0;
-    nvpS->np[SENSOR_RAIN_SENSOR_HEATER].value = rainSensorHeater;
+    nvpS[SENSOR_RAIN_SENSOR_HEATER].setValue(rainSensorHeater);
+
+    /*************
+        if (constants.sqmStatus < 0) {
+    	LOG_DEBUG("send correct sqmStatus constant");
+
+            if (m_FirmwareVersion >= 5.89 && data.lightFreq > 0)
+    	{
+    	    constants.sqmStatus = 1;
+    	}
+    	else
+    	{
+    	    constants.sqmStatus = 0;
+    	}
+            sendConstants();
+        }
+    *************/
 
 
-    INumberVectorProperty *nvpSqmLimit = getNumber("sqmLimit");
-    float sqmLimit                     = getNumberValueFromVector(nvpSqmLimit, "sqmLimit");
+    float ambientTemperature = data.tempEst;
+    float ambientLight = data.ldr;
 
-    float ambientTemperature = data.ambient;
+    nvpS[SENSOR_BRIGHTNESS_SENSOR].setValue(ambientLight);
 
-    float ambientLight;
-    if( data.ldrFreq >= 0 ) {
-        double sqm = ( 250000.0 / double(data.ldrFreq) );
+    if( data.lightFreq > 0 )
+    {
+        double sqm = ( 250000.0 / double(data.lightFreq) );
+
+        auto nvpSqmLimit = getNumber("sqmLimit");
+        float sqmLimit   = getNumberValueFromVector(nvpSqmLimit, "sqmLimit");
 
         sqm = sqmLimit - 2.5 * log10( sqm );
 
         ambientLight = float( sqm );
     }
-    else {
+    else
+    {
         ambientLight = float(data.ldr);
         if (ambientLight > 1022.0)
         {
@@ -669,10 +847,7 @@ bool AAGCloudWatcher::sendData()
         }
         ambientLight = constants.ldrPullUpResistance / ((1023.0 / ambientLight) - 1.0);
     }
-    nvpS->np[SENSOR_BRIGHTNESS_SENSOR].value  = ambientLight;
-
-    setParameterValue("WEATHER_BRIGHTNESS", ambientLight);
-
+    nvpS[SENSOR_BRIGHTNESS_SQM].setValue(ambientLight);
 
     if (ambientTemperature == -10000)
     {
@@ -694,39 +869,37 @@ bool AAGCloudWatcher::sendData()
             1.0 / (ambientTemperature / constants.ambientBetaFactor + 1.0 / (ABS_ZERO + 25.0)) - ABS_ZERO;
     }
 
-    nvpS->np[SENSOR_AMBIENT_TEMPERATURE_SENSOR].value = ambientTemperature;
+    nvpS[SENSOR_AMBIENT_TEMPERATURE_SENSOR].setValue(ambientTemperature);
 
-    INumberVectorProperty *nvpSky = getNumber("skyCorrection");
-    float k1                      = getNumberValueFromVector(nvpSky, "k1");
-    float k2                      = getNumberValueFromVector(nvpSky, "k2");
-    float k3                      = getNumberValueFromVector(nvpSky, "k3");
-    float k4                      = getNumberValueFromVector(nvpSky, "k4");
-    float k5                      = getNumberValueFromVector(nvpSky, "k5");
+    auto nvpSky = getNumber("skyCorrection");
+    float k1    = getNumberValueFromVector(nvpSky, "k1");
+    float k2    = getNumberValueFromVector(nvpSky, "k2");
+    float k3    = getNumberValueFromVector(nvpSky, "k3");
+    float k4    = getNumberValueFromVector(nvpSky, "k4");
+    float k5    = getNumberValueFromVector(nvpSky, "k5");
 
     float correctedTemperature =
         skyTemperature - ((k1 / 100.0) * (ambientTemperature - k2 / 10.0) +
                           (k3 / 100.0) * pow(exp(k4 / 1000 * ambientTemperature), (k5 / 100.0)));
 
-    nvpS->np[SENSOR_CORRECTED_INFRARED_SKY].value = correctedTemperature;
-    nvpS->np[SENSOR_WIND_SPEED].value = data.windSpeed;
-    nvpS->np[SENSOR_HUMIDITY].value = data.humidity;
-    nvpS->np[SENSOR_PRESSURE].value = data.pressure;
-    nvpS->s = IPS_OK;
-    IDSetNumber(nvpS, nullptr);
+    nvpS[SENSOR_CORRECTED_INFRARED_SKY].setValue(correctedTemperature);
+    nvpS[SENSOR_WIND_SPEED].setValue(data.windSpeed);
+    nvpS[SENSOR_RELATIVE_HUMIDITY].setValue(data.humidity);
+    nvpS[SENSOR_PRESSURE].setValue(data.abspress);
+    nvpS[SENSOR_RELATIVE_PRESSURE].setValue(data.relpress);
+    nvpS.setState(IPS_OK);
+    nvpS.apply();
 
-    ISwitchVectorProperty *svpSw = getSwitch("deviceSwitch");
-    svpSw->sp[0].s = (data.switchStatus == 1) ? ISS_OFF : ISS_ON;
-    svpSw->sp[1].s = (data.switchStatus == 1) ? ISS_ON : ISS_OFF;
-    svpSw->s = IPS_OK;
-    IDSetSwitch(svpSw, nullptr);
+    auto svpSw = getSwitch("deviceSwitch");
+    svpSw[0].setState((data.switchStatus == 1) ? ISS_OFF : ISS_ON);
+    svpSw[1].setState((data.switchStatus == 1) ? ISS_ON : ISS_OFF);
+    svpSw.setState(IPS_OK);
+    svpSw.apply();
 
     setParameterValue("WEATHER_CLOUD", correctedTemperature);
     setParameterValue("WEATHER_RAIN", data.rain);
 
-    INumberVectorProperty *consts = getNumber("constants");
-    int anemometerStatus          = getNumberValueFromVector(consts, "anemometerStatus");
-
-    if (anemometerStatus)
+    if (constants.anemometerStatus)
     {
         setParameterValue("WEATHER_WIND_SPEED", data.windSpeed);
     }
@@ -737,6 +910,8 @@ bool AAGCloudWatcher::sendData()
 
     if (data.humidity > 0)
         setParameterValue("WEATHER_HUMIDITY", data.humidity);
+    if (ambientLight > 0)
+        setParameterValue("WEATHER_SQM", ambientLight);
 
     return true;
 }
@@ -751,6 +926,12 @@ double AAGCloudWatcher::getNumberValueFromVector(INumberVectorProperty *nvp, con
         }
     }
     return 0;
+}
+
+double AAGCloudWatcher::getNumberValueFromVector(INDI::PropertyNumber nvp, const char *name)
+{
+    auto widget = nvp.findWidgetByName(name);
+    return widget ? widget->getValue() : 0;
 }
 
 bool AAGCloudWatcher::resetData()
@@ -801,10 +982,10 @@ bool AAGCloudWatcher::resetData()
     names[10]  = const_cast<char *>("totalReadings");
     values[10] = 0;
 
-    INumberVectorProperty *nvp = getNumber("readings");
-    IUUpdateNumber(nvp, values, names, N_DATA);
-    nvp->s = IPS_IDLE;
-    IDSetNumber(nvp, nullptr);
+    auto nvp = getNumber("readings");
+    nvp.update(values, names, N_DATA);
+    nvp.setState(IPS_IDLE);
+    nvp.apply();
 
     const int N_ERRORS = 5;
     double valuesE[N_ERRORS];
@@ -825,10 +1006,10 @@ bool AAGCloudWatcher::resetData()
     namesE[4]  = const_cast<char *>("pecByteErrors");
     valuesE[4] = 0;
 
-    INumberVectorProperty *nvpE = getNumber("unitErrors");
-    IUUpdateNumber(nvpE, valuesE, namesE, N_ERRORS);
-    nvpE->s = IPS_IDLE;
-    IDSetNumber(nvpE, nullptr);
+    auto nvpE = getNumber("unitErrors");
+    nvpE.update(valuesE, namesE, N_ERRORS);
+    nvpE.setState(IPS_IDLE);
+    nvpE.apply();
 
     const int N_SENS = 10;
     double valuesS[N_SENS];
@@ -852,7 +1033,7 @@ bool AAGCloudWatcher::resetData()
     namesS[5]  = const_cast<char *>("brightnessSensor");
     valuesS[5] = 0.0;
 
-    setParameterValue("WEATHER_BRIGHTNESS", 0);
+    setParameterValue("WEATHER_SQM", 0);
 
     namesS[6]  = const_cast<char *>("correctedInfraredSky");
     valuesS[6] = 0.0;
@@ -868,29 +1049,29 @@ bool AAGCloudWatcher::resetData()
 
     setParameterValue("WEATHER_WIND_SPEED", 0);
 
-    INumberVectorProperty *nvpS = getNumber("sensors");
-    IUUpdateNumber(nvpS, valuesS, namesS, N_SENS);
-    nvpS->s = IPS_IDLE;
-    IDSetNumber(nvpS, nullptr);
+    auto nvpS = getNumber("sensors");
+    nvpS.update(valuesS, namesS, N_SENS);
+    nvpS.setState(IPS_IDLE);
+    nvpS.apply();
 
-    ISwitchVectorProperty *svpSw = getSwitch("deviceSwitch");
-    svpSw->s                     = IPS_IDLE;
-    IDSetSwitch(svpSw, nullptr);
+    auto svpSw = getSwitch("deviceSwitch");
+    svpSw.setState(IPS_IDLE);
+    svpSw.apply();
 
-    ISwitchVectorProperty *svpRC = getSwitch("rainConditions");
-    svpRC->s                     = IPS_IDLE;
-    IDSetSwitch(svpRC, nullptr);
+    auto svpRC = getSwitch("rainConditions");
+    svpRC.setState(IPS_IDLE);
+    svpRC.apply();
 
-    ISwitchVectorProperty *svp = getSwitch("heaterStatus");
-    svp->s                     = IPS_IDLE;
-    IDSetSwitch(svp, nullptr);
+    auto svp = getSwitch("heaterStatus");
+    svp.setState(IPS_IDLE);
+    svp.apply();
     return true;
 }
 
 bool AAGCloudWatcher::sendConstants()
 {
-    INumberVectorProperty *nvp = getNumber("constants");
-    ITextVectorProperty *tvp = getText("FW");
+    auto nvp = getNumber("constants");
+    auto tvp = getText("FW");
 
     int r = cwc->getConstants(&constants);
 
@@ -901,7 +1082,7 @@ bool AAGCloudWatcher::sendConstants()
 
     m_FirmwareVersion = constants.firmwareVersion;
 
-    const int N_CONSTANTS = 11;
+    const int N_CONSTANTS = 12;
     double values[N_CONSTANTS];
     char *names[N_CONSTANTS];
 
@@ -938,85 +1119,93 @@ bool AAGCloudWatcher::sendConstants()
     names[10]  = const_cast<char *>("anemometerStatus");
     values[10] = constants.anemometerStatus;
 
-    IUUpdateNumber(nvp, values, names, N_CONSTANTS);
-    nvp->s = IPS_OK;
-    IDSetNumber(nvp, nullptr);
+    names[11]  = const_cast<char *>("sqmStatus");
+    values[11] = constants.sqmStatus;
+
+    nvp.update(values, names, N_CONSTANTS);
+    nvp.setState(IPS_OK);
+    nvp.apply();
 
     char version[8] = {0};
     snprintf(version, 8, "%.2f", m_FirmwareVersion);
-    IUSaveText(&tvp->tp[0], version);
-    tvp->s = IPS_OK;
-    IDSetText(tvp, nullptr);
+    tvp[0].setText(version);
+    tvp.setState(IPS_OK);
+    tvp.apply();
     return true;
 }
 
-bool AAGCloudWatcher::resetConstants()
-{
-    INumberVectorProperty *nvp = getNumber("constants");
+/*
+  bool AAGCloudWatcher::resetConstants()
+  {
+  auto nvp = getNumber("constants");
 
-    ITextVectorProperty *tvp = getText("FW");
+  auto tvp = getText("FW");
 
-    CloudWatcherConstants constants;
+  CloudWatcherConstants constants;
 
-    int r = cwc->getConstants(&constants);
+  int r = cwc->getConstants(&constants);
 
-    if (!r)
-    {
-        return false;
-    }
+  if (!r)
+  {
+  return false;
+  }
 
-    const int N_CONSTANTS = 11;
-    double values[N_CONSTANTS];
-    char *names[N_CONSTANTS];
+  const int N_CONSTANTS = 12;
+  double values[N_CONSTANTS];
+  char *names[N_CONSTANTS];
 
-    names[0]  = const_cast<char *>("internalSerialNumber");
-    values[0] = 0;
+  names[0]  = const_cast<char *>("internalSerialNumber");
+  values[0] = 0;
 
-    names[1]  = const_cast<char *>("zenerVoltage");
-    values[1] = 0;
+  names[1]  = const_cast<char *>("zenerVoltage");
+  values[1] = 0;
 
-    names[2]  = const_cast<char *>("LDRMaxResistance");
-    values[2] = 0;
+  names[2]  = const_cast<char *>("LDRMaxResistance");
+  values[2] = 0;
 
-    names[3]  = const_cast<char *>("LDRPullUpResistance");
-    values[3] = 0;
+  names[3]  = const_cast<char *>("LDRPullUpResistance");
+  values[3] = 0;
 
-    names[4]  = const_cast<char *>("rainBetaFactor");
-    values[4] = 0;
+  names[4]  = const_cast<char *>("rainBetaFactor");
+  values[4] = 0;
 
-    names[5]  = const_cast<char *>("rainResistanceAt25");
-    values[5] = 0;
+  names[5]  = const_cast<char *>("rainResistanceAt25");
+  values[5] = 0;
 
-    names[6]  = const_cast<char *>("rainPullUpResistance");
-    values[6] = 0;
+  names[6]  = const_cast<char *>("rainPullUpResistance");
+  values[6] = 0;
 
-    names[7]  = const_cast<char *>("ambientBetaFactor");
-    values[7] = 0;
+  names[7]  = const_cast<char *>("ambientBetaFactor");
+  values[7] = 0;
 
-    names[8]  = const_cast<char *>("ambientResistanceAt25");
-    values[8] = 0;
+  names[8]  = const_cast<char *>("ambientResistanceAt25");
+  values[8] = 0;
 
-    names[9]  = const_cast<char *>("ambientPullUpResistance");
-    values[9] = 0;
+  names[9]  = const_cast<char *>("ambientPullUpResistance");
+  values[9] = 0;
 
-    names[10]  = const_cast<char *>("anemometerStatus");
-    values[10] = 0;
+  names[10]  = const_cast<char *>("anemometerStatus");
+  values[10] = 0;
 
-    IUUpdateNumber(nvp, values, names, N_CONSTANTS);
-    nvp->s = IPS_IDLE;
-    IDSetNumber(nvp, nullptr);
+  names[11]  = const_cast<char *>("sqmStatus");
+  values[11] = 0;
 
-    char *valuesT[1];
-    char *namesT[1];
+  nvp.update(values, names, N_CONSTANTS);
+  nvp.setState(IPS_IDLE);
+  nvp.apply();
 
-    namesT[0]  = const_cast<char *>("firmwareVersion");
-    valuesT[0] = const_cast<char *>("-");
+  char *valuesT[1];
+  char *namesT[1];
 
-    IUUpdateText(tvp, valuesT, namesT, 1);
-    tvp->s = IPS_IDLE;
-    IDSetText(tvp, nullptr);
-    return true;
-}
+  namesT[0]  = const_cast<char *>("firmwareVersion");
+  valuesT[0] = const_cast<char *>("-");
+
+  tvp.update(valuesT, namesT, 1);
+  tvp.setState(IPS_IDLE);
+  tvp.apply();
+  return true;
+  }
+*/
 
 const char *AAGCloudWatcher::getDefaultName()
 {

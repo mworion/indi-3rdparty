@@ -158,7 +158,7 @@ bool Talon6::updateProperties()
         deleteProperty(SwitchesLP.name);
     }
     // We do not need some of the properties defined in parent class
-    deleteProperty(DomeMotionSP.name);
+    deleteProperty(DomeMotionSP);
 
     return true;
 }
@@ -199,8 +199,8 @@ bool Talon6::ISNewSwitch(const char *dev, const char *name, ISState *states, cha
 
             if (SafetyS[0].s == ISS_OFF)
                 DEBUGF(INDI::Logger::DBG_SESSION, "Warning: Safety conditions are now disabled. You will"
-                       "be able  to freely open and close the roof manually from the driver,"
-                       "even if there is a safety condition active.This may cause damage to your equipment.", NULL);
+                                                  "be able  to freely open and close the roof manually from the driver,"
+                                                  "even if there is a safety condition active.This may cause damage to your equipment.", NULL);
             else
                 DEBUGF(INDI::Logger::DBG_SESSION,  "Safety Conditions are enabled", NULL);
 
@@ -336,7 +336,7 @@ void Talon6::TimerHit()
     getDeviceStatus();
     SetTimer(1000);
 
-    if (DomeMotionSP.s == IPS_BUSY)
+    if (DomeMotionSP.getState() == IPS_BUSY)
     {
         // Abort called
         if (MotionRequest < 0)
@@ -346,7 +346,7 @@ void Talon6::TimerHit()
             return;
         }
         // Roll off is opening
-        if (DomeMotionS[DOME_CW].s == ISS_ON)
+        if (DomeMotionSP[DOME_CW].getState() == ISS_ON)
         {
             if (fullOpenRoofSwitch == ISS_ON)
             {
@@ -356,7 +356,7 @@ void Talon6::TimerHit()
             }
         }
         // Roll Off is closing
-        else if (DomeMotionS[DOME_CCW].s == ISS_ON)
+        else if (DomeMotionSP[DOME_CCW].getState() == ISS_ON)
         {
             if (fullClosedRoofSwitch == ISS_ON )
             {
@@ -785,9 +785,9 @@ bool Talon6::Abort()
     // If both limit switches are off, then we're neither parked nor unparked.
     if (fullOpenRoofSwitch == ISS_OFF && fullClosedRoofSwitch == ISS_OFF)
     {
-        IUResetSwitch(&ParkSP);
-        ParkSP.s = IPS_IDLE;
-        IDSetSwitch(&ParkSP, nullptr);
+        ParkSP.reset();
+        ParkSP.setState(IPS_IDLE);
+        ParkSP.apply();
         WriteString("&S#");
     }
 
@@ -822,8 +822,8 @@ IPState Talon6::DomeGoTo(int GoTo )
     std::string paddedHexTicks = std::string(5 - hexTicksString.length(), '0') + hexTicksString;
 
     //Transform to char and build command string formatted as to documentation
-    char hexTicksChar[paddedHexTicks.size() + 1];
-    strcpy(hexTicksChar, paddedHexTicks.c_str());
+    std::vector<char> hexTicksChar(paddedHexTicks.size() + 1);
+    strcpy(hexTicksChar.data(), paddedHexTicks.c_str());
     char commandString[8];
     commandString[0] = '&';
     commandString[1] = 'A';

@@ -1,6 +1,6 @@
 %define __cmake_in_source_build %{_vpath_builddir}
 Name: indi-playerone
-Version:2.0.0.git
+Version:2.1.3.git
 Release: %(date -u +%%Y%%m%%d%%H%%M%%S)%{?dist}
 Summary: Instrument Neutral Distributed Interface 3rd party drivers
 
@@ -52,7 +52,7 @@ and scalable. It supports common DCS functions such as remote control,
 data acquisition, monitoring, and a lot more. This is a 3rd party driver.
 
 
-%prep -v
+%prep
 %autosetup -v -p1 -n indi-3rdparty-master
 
 %build
@@ -74,6 +74,62 @@ make DESTDIR=%{buildroot} install
 %{_datadir}/indi
 
 %changelog
+* Wed Aug 12 2026 Hiroshi Saito <hiro3110g@gmail.com>
+- Available exposure change during video streaming
+- Refactor with thin, type-safe C++ wrapper for C SDK
+* Sun Aug 9 2026 Hiroshi Saito <hiro3110g@gmail.com>
+- BugFix: Error handling of getImageData()/getExposure()
+- Replace usleep() to wait_for()
+* Sat Jan 24 2026 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.10.0
+- Update PlayerOnePW SDK to v1.2.3
+* Sat Nov 15 2025 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.9.1
+* Fri Sep 5 2025 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.9.0
+* Sat Apr 5 2025 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.8.1
+- Update PlayerOnePW SDK to v1.2.2
+* Fri Feb 21 2025 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.8.0
+* Sat Dec 3 2024 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.7.1
+- Update PlayerOnePW SDK to v1.2.1
+* Sat Sep 21 2024 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.7.0
+* Sun Jul 14 2024 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.6.3
+* Sun May 12 2024 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.6.2
+* Thu Jan 4 2024 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.6.1
+* Wed Sep 20 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.6.0
+* Sat Sep 02 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.5.0
+* Sat Jul 29 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.4.1
+* Thu Jul 20 2023 Jarno Paananen <jarno.paananen@gmail.com>
+- Add sensor mode control for cameras that support it
+* Tue Jun 27 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.4.0
+* Tue May 09 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.3.0
+* Sat May 06 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOnePW SDK to v1.2.0
+* Thu Apr 27 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- BugFix: top quarter noise on bin2 image
+* Wed Mar 15 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.2.2
+* Thu Mar 2 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOneCamera SDK to v3.2.1
+* Fri Feb 24 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Add single camera driver for multi threading
+- Add flip property with bayer compensation
+- Add nickname property for multi camera driver
+- Update PlayerOneCamera SDK to v3.2.0
+* Sun Feb 05 2023 Hiroshi Saito <hiro3110g@gmail.com>
+- Update PlayerOnePW SDK to v1.1.0
 * Wed Jan 18 2023 Hiroshi Saito <hiro3110g@gmail.com>
 - Add PlayerOne Filter Wheel driver
 - Update PlayerOneCamera SDK to v3.1.1

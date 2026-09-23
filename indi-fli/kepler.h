@@ -60,7 +60,7 @@ class Kepler : public INDI::CCD
         virtual void debugTriggered(bool enable) override;
         virtual bool saveConfigItems(FILE *fp) override;
 
-        virtual void addFITSKeywords(INDI::CCDChip *targetChip) override;
+        virtual void addFITSKeywords(INDI::CCDChip *targetChip, std::vector<INDI::FITSRecord> &fitsKeywords) override;
         virtual void UploadComplete(INDI::CCDChip *targetChip) override;
 
     private:
@@ -80,7 +80,6 @@ class Kepler : public INDI::CCD
         INDI::PropertySwitch FanSP {2};
 
         // Merging
-        INDI::PropertySwitch MergeMethodSP {2};
         INDI::PropertySwitch MergePlanesSP {3};
         INDI::PropertySwitch RequestStatSP {2};
         INDI::PropertyText MergeCalibrationFilesTP {2};
@@ -91,10 +90,16 @@ class Kepler : public INDI::CCD
         };
 
         // Black Level Adjust
-        INDI::PropertyNumber BlackLevelNP {1};
+        INDI::PropertyNumber BlackLevelNP {2};
+
+        // Black Sun Adjust
+        INDI::PropertyNumber BlackSunAdjustNP {2};
 
         // GPS State
-        INDI::PropertyLight GPSStateLP {3};
+        INDI::PropertyLight GPSStateLP {4};
+
+        // Camera Mode
+        INDI::PropertySwitch CameraModeSP {0};
 
 #ifdef LEGACY_MODE
         //****************************************************************************************
@@ -133,7 +138,6 @@ class Kepler : public INDI::CCD
         //****************************************************************************************
         // Workers
         //****************************************************************************************
-        void workerStreamVideo(const std::atomic_bool &isAboutToQuit);
         void workerExposure(const std::atomic_bool &isAboutToQuit, float duration);
 
         //****************************************************************************************
@@ -141,8 +145,7 @@ class Kepler : public INDI::CCD
         //****************************************************************************************
         FPRODEVICEINFO m_CameraInfo;
         int32_t m_CameraHandle;
-        FPROCAP m_CameraCapabilities;
-        uint32_t m_CameraCapabilitiesSize {0};
+        uint32_t m_CameraCapabilitiesList[static_cast<uint32_t>(FPROCAPS::FPROCAP_NUM)];;
 
         uint8_t m_ExposureRetry {0};
         INDI::SingleThreadPool m_Worker;
@@ -154,8 +157,12 @@ class Kepler : public INDI::CCD
         FPROUNPACKEDSTATS  fproStats;
         FPRO_HWMERGEENABLE mergeEnables;
 
+        // Format
+        uint32_t m_FormatsCount;
+        FPRO_PIXEL_FORMAT *m_FormatList {nullptr};
+
         // GPS
-        FPROGPSSTATE m_LastGPSState {FPRO_GPS_NOT_DETECTED};
+        FPROGPSSTATE m_LastGPSState {FPROGPSSTATE::FPRO_GPS_NOT_DETECTED};
 
         // Temperature
         INDI::Timer m_TemperatureTimer;
@@ -164,6 +171,9 @@ class Kepler : public INDI::CCD
         // Gain Tables
         FPROGAINVALUE *m_LowGainTable {nullptr};
         FPROGAINVALUE *m_HighGainTable {nullptr};
+
+        // Camera Modes
+        std::vector<FPROSENSMODE> m_SensorModes;
 
         static std::map<FPRODEVICETYPE, double> SensorPixelSize;
         static constexpr double TEMPERATURE_THRESHOLD {0.1};

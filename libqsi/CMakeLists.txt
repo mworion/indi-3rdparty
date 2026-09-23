@@ -1,29 +1,26 @@
+cmake_minimum_required(VERSION 3.16)
 PROJECT(libqsi C CXX)
-cmake_minimum_required(VERSION 3.2)
 
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules/")
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_modules/")
 include(GNUInstallDirs)
+include(CMakeCommon)
 
-SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error")
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error")
-SET(CMAKE_CXX_STANDARD 11)
 
 find_package(FTDI1 REQUIRED)
 find_package(INDI REQUIRED)
 
-SET(PACKAGE_VERSION "7.6.1")
+SET(PACKAGE_VERSION "7.6.2")
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config.h )
 
-ADD_DEFINITIONS(-DUSELIBFTDIONE -DNO_CYUSB -Wall -O2 -fPIC -g)
-
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
+ADD_DEFINITIONS(-DUSELIBFTDIONE -DNO_CYUSB)
 
 include_directories( ${CMAKE_CURRENT_BINARY_DIR})
 include_directories( ${CMAKE_CURRENT_SOURCE_DIR})
 include_directories( ${FTDI1_INCLUDE_DIR})
 include_directories( ${INDI_INCLUDE_DIR})
+include_directories( ${USB1_INCLUDE_DIR})
 
 set(qsi_LIB_SRCS
     CCDCamera.cpp CameraID.cpp ConvertUTF.c Filter.cpp FilterWheel.cpp HotPixelMap.cpp QSI_PacketWrapper.cpp QSI_USBWrapper.cpp qsiapi.cpp qsicopyright.txt QSIFeatures.cpp
@@ -33,7 +30,7 @@ set(qsi_LIB_SRCS
 #build a shared library
 ADD_LIBRARY(qsiapi SHARED ${qsi_LIB_SRCS})
 
-set_target_properties(qsiapi PROPERTIES VERSION 7.6.1 SOVERSION 7)
+set_target_properties(qsiapi PROPERTIES VERSION 7.6.2 SOVERSION 7)
 
 #need to link to some other libraries ? just add them here
 TARGET_LINK_LIBRARIES(qsiapi ${FTDI1_LIBRARIES})

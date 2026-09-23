@@ -1,3 +1,131 @@
+libasi (1.410) jammy; urgency=medium
+
+  * Revert EFWFilter due to regression in ZWO SDK library
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Fri, 12 Dec 2025 10:00:00 +0300
+
+libasi (1.400) jammy; urgency=medium
+
+  * ASI Camera SDK 1.40 release
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Tue, 18 Nov 2025 10:00:00 +0300
+
+libasi (1.390) jammy; urgency=medium
+
+  * ASI Camera SDK 1.39 release
+
+ -- Kevin Hester <kevinh@geeksville.com>  Tue, 27 Aug 2025 17:00:00 +0300
+
+libasi (1.370) jammy; urgency=medium
+
+  * ASI Rotator CAA SDK 1.0 release
+  * ASI Camera SDK 1.37 release
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Thu, 9 Jan 2024 17:00:00 +0300
+
+libasi (1.360) jammy; urgency=medium
+
+  * ASI Camera SDK 1.36 release
+
+ -- Jasem Mutlaq <mutlaqja@ikarustech.com>  Tue, 8 Oct 2024 17:00:00 +0300
+
+libasi (1.351) jammy; urgency=medium
+
+  * ASI Camera SDK 1.34 release. Change log:
+
+    New Features
+    1. USBHub control for some cooling cameras.
+
+    Bug fix
+    1. Fixed some issues.
+
+ -- Jarno Paananen <jarno.paananen@gmail.com>  Fri, 2 Aug 2024 18:57:40 +0200
+
+libasi (1.34) jammy; urgency=medium
+
+  * ASI Camera SDK 1.34 release. Change log:
+
+    New Features
+    1. USBHub control for some cooling cameras.
+
+    Bug fix
+    1. Fixed some issues.
+
+ -- Jarno Paananen <jarno.paananen@gmail.com>  Fri, 29 Mar 2024 18:57:40 +0200
+
+libasi (1.33) jammy; urgency=medium
+
+  * ASI Camera SDK 1.33 release. Change log:
+
+    Bug fix
+    1. Fixed the issue where some camera's fans do not rotate when they are cooling.
+
+ -- Jarno Paananen <jarno.paananen@gmail.com>  Tue, 26 Dec 2023 03:27:56 +0200
+
+libasi (1.32) jammy; urgency=medium
+
+  * ASI Camera SDK 1.32 release. Change log for this and couple of
+    previous versions.
+
+    1.32:
+    New Features
+      1. Can remember the last state of cooling camera's fan speed and LED
+         state.
+    Optimization
+      1. ASI2600 linearity of image brightness in long exposure state.
+      2. ASI120 Mini no longer supports overclocking feature.
+      3. Maximum number of supported camera models changed to 256
+    Bug fix
+      1. In rare cases, two different ASI cameras are recognized as the same
+         camera.
+      2. ASI2600 has no image in high speed mode.
+      3. GPS time of GPS cameras is inaccurate in individual cases.
+      4. ASI664/ASI715 has no image under certain exposure times in hardware
+         Bin2 state.
+      5. ASI2600 drops frames in high speed mode when transmitting data via
+         USB2.0.
+
+    1.31:
+    New Features
+      1. Add ASI664MC,ASI715MC.
+      2. Add fan speed control and LED light control for cooler cameras.
+      3. For customized cameras, GPS functionality has been added.
+    Bug fix
+      1. fixed the bug of ASI220Mini's brightness on high gain.
+
+    1.30:
+    Bug fix
+      1. Fix low frame rate problem in ASI462MM high-speed mode.
+
+ -- Jarno Paananen <jarno.paananen@gmail.com>  Fri, 01 Dec 2023 22:00:46 +0200
+
+libasi (1.31) jammy; urgency=medium
+
+  * ASI Camera SDK 1.31 release. No change log posted.
+
+ -- Jarno Paananen <jarno.paananen@gmail.com>  Sat, 28 Oct 2023 15:02:26 +0300
+
+libasi (1.30) jammy; urgency=medium
+
+  * ASI Camera SDK 1.30 release. No change log posted.
+
+ -- Jarno Paananen <jarno.paananen@gmail.com>  Wed, 20 Sep 2023 22:22:30 +0300
+
+libasi (1.29) jammy; urgency=medium
+
+  * ASI Camera SDK 1.29 release. No change log posted.
+
+ -- Jarno Paananen <jarno.paananen@gmail.com>  Wed, 03 May 2023 22:48:55 +0300
+
+libasi (1.28) jammy; urgency=medium
+
+  * ASI Camera SDK 1.28 release. Changelog:
+    V1.28 2023.1.12
+    (1) Add ASI990-MM Pro,ASI462MM
+    (2) Some optimizations have been made
+
+ -- Jarno Paananen <jarno.paananen@gmail.com>  Tue, 07 Feb 2023 22:46:29 +0200
+
 libasi (1.27) jammy; urgency=medium
 
   * ASI Camera SDK 1.27 release. Changelog:

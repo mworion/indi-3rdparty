@@ -1,6 +1,6 @@
 %define __cmake_in_source_build %{_vpath_builddir}
 Name: indi-toupbase
-Version:2.0.0.git
+Version:2.1.3.git
 Release: %(date -u +%%Y%%m%%d%%H%%M%%S)%{?dist}
 Summary: Instrument Neutral Distributed Interface 3rd party drivers
 
@@ -40,15 +40,19 @@ BuildRequires: pkgconfig(cfitsio)
 BuildRequires: pkgconfig(libcurl)
 BuildRequires: pkgconfig(gsl)
 BuildRequires: pkgconfig(libjpeg)
-BuildRequires: pkgconfig(libusb-1.0)
 BuildRequires: pkgconfig(zlib)
 
-BuildRequires: libaltaircam
 BuildRequires: libtoupcam
-BuildRequires: libstarshootg
-BuildRequires: libnncam
+BuildRequires: libaltaircam
+BuildRequires: libbressercam
 BuildRequires: libmallincam
+BuildRequires: libnncam
+BuildRequires: libogmacam
 BuildRequires: libomegonprocam
+BuildRequires: libstarshootg
+BuildRequires: libtscam
+BuildRequires: libsvbonycam
+BuildRequires: libmeadecam
 
 
 %description
@@ -58,7 +62,7 @@ and scalable. It supports common DCS functions such as remote control,
 data acquisition, monitoring, and a lot more. This is a 3rd party driver.
 
 
-%prep -v
+%prep
 %autosetup -v -p1 -n indi-3rdparty-master
 
 %build
@@ -83,4 +87,5 @@ make DESTDIR=%{buildroot} install
 * Sun Jul 19 2020 Jim Howard <jh.xsnrg+fedora@gmail.com> 1.8.7.git-1
 - update to build from git for copr, credit to Sergio Pascual and Christian Dersch for prior work on spec files
 - added Omegon SDK based toupcam driver. 2022-05-27 
+- added Meade SDK based toupcam driver. 2024-07-12
 
